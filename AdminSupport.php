@@ -100,7 +100,33 @@ class specials_AdminSupport extends specials_baseSpecials
         ));
 
         if($appraisal_id !== "") {
-            $sql = "";
+            $sql = "SELECT  
+                        WH.workflow_history_id,
+                        WA.action_name,
+                        WH.action_id,
+                        WH.workflow_id,
+                        ST1.status_name as Start_With,
+                        WH.start_status,
+                        WC.name as Condition,
+                        WF.function_name as Func,
+                        ST2.status_name as End_With,
+                        WH.end_status,
+                        WH.successful_flag,
+                        U.user_name,
+                        WH.update_date
+                         FROM workflow_history AS WH
+                        LEFT JOIN users AS U ON U.user_id = WH.updater_id
+                        LEFT JOIN commondata.workflow_actions AS WA ON WA.action_id = WH.action_id
+                        LEFT JOIN commondata.status_types AS ST1 ON WH.start_status = ST1.status_type_id
+                        LEFT JOIN commondata.status_types AS ST2 ON WH.end_status = ST2.status_type_id
+                        LEFT JOIN workflow_conditions AS WC ON WH.workflow_condition_id = WC.workflow_condition_id
+                        LEFT JOIN commondata.workflow_functions AS WF ON WF.function_id = WH.function_id
+                  WHERE appraisal_id=?    
+                  ORDER BY WH.workflow_history_id ASC
+            ";
+            $this->buildJSTable($this->_getDAO("AppraisalsDAO"), $this->query($sql,array($appraisal_id))->getRows(), array(
+                "viewOnly"  => true
+            ));
         }
     }
 
@@ -589,7 +615,7 @@ class specials_AdminSupport extends specials_baseSpecials
                 "partial_payment_information"   => "partial_payment_information",
                 "appraisal_notes"   => "appraisal_notes",
                 "appraisals"   => "appraisals",
-                "appraisal_productss"   => "appraisal_products",
+                "appraisal_products"   => "appraisal_products",
                 "ead_appraisal_mappings"   => "ead_appraisal_mappings",
                 "ead_loan_number_mappings" =>  "ead_loan_number_mappings",
                 "ead_appraisals_business_unit"   => "ead_appraisals_business_unit",
@@ -872,7 +898,7 @@ class specials_AdminSupport extends specials_baseSpecials
                 $tbody .= "<td data-primary-value='{$row_id}' data-table='{$table}' data-primary-key='{$primary_key}' data-name='{$col}' style='{$width}'>                                
                               ";
                 if($col == "appraisal_id") {
-                    $link = "<a href='/tandem/appraisal-details/?appraisal_id={$value}' target='_blank' style='font-size: 11px;' >Open Appraisal Detail</a> ";
+                    $link = "<a href='/tandem/appraisal-details/?appraisal_id={$value}' target='_blank' style='font-size: 11px;' >Open</a> ";
                 } else {
                     $link = "";
                 }
