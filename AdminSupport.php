@@ -7,6 +7,8 @@ require_once ('classes/plugins/partners/ACI/AciSkyReviewPlugin.php');
 require_once ('classes/paymentHandlers/PaymentResult.php');
 require_once ('classes/workflow/WorkflowActions.php');
 require_once ('classes/PDFDocument/PDFDocumentTable.php');
+require_once ('daos/extended/AMCProductPricingRulesDAO.php');
+require_once ('classes/engines/BaseEngine.php');
 
 class specials_AdminSupport extends specials_baseSpecials
 {
@@ -19,11 +21,17 @@ class specials_AdminSupport extends specials_baseSpecials
     public function buildBody() {
         $action = isset($_GET['action']) ? $_GET['action'] : "";
         switch($action) {
+            case "cronjobs":
+                $this->cronjobs();
+                break;
             case "remove_users":
                 $this->remove_user_page();
                 break;
             case "change_location_parent":
                 $this->change_location_parent();
+                break;
+            case "product_pricing_simulate":
+                $this->product_pricing_simulate();
                 break;
             case "aci_sky_review":
                 $this->aci_sky_review();
@@ -70,9 +78,249 @@ class specials_AdminSupport extends specials_baseSpecials
             case "login_as_user":
                 $this->login_as_user();
                 break;
+            case "search_table_has_column":
+                $this->search_table_has_column();
+                break;
+            case "getNotificationObject":
+                $this->getNotificationObject();
+                break;
             default:
 
                 break;
+
+        }
+    }
+
+
+
+    public function getNotificationObject() {
+        $appraisal_id = $this->getValue("appraisal_id","");
+        $this->buildForm(array(
+            $this->buildInput("appraisal_id","Appraisal ID","text")
+        ));
+        if($appraisal_id != "") {
+            $this->h4("ACCEPT_REJECT_FROM_EMAIL_NOTIFICATION");
+            echo "<pre>";
+            $appraisal = $this->_getDAO('AppraisalsDAO')->GetNotificationObject($appraisal_id);
+            /** @var stdClass $notification */
+            $base = new BaseEngineEx();
+            $notification = $base->makeNotification($appraisal, EmailNotification::ACCEPT_REJECT_FROM_EMAIL_NOTIFICATION);
+            print_r($notification->ToUsers);
+            echo "</pre>";
+
+
+        }
+    }
+
+    public function cronjobs($return = false) {
+        if($return === true) {
+            $sql = "SELECT COUNT(*) as total FROM commondata.cronjobs WHERE enabled_flag IS NOT TRUE ";
+            return $this->query($sql)->fetchObject()->TOTAL;
+        }
+        $sql = "SELECT * FROM commondata.cronjob_exceptions ORDER BY cronjob_exception_id DESC LIMIT 2";
+        $this->buildJSTable($this->_getDAO("CronjobsDAO"), $this->query($sql)->GetRows(), array(
+            "viewOnly"  => true
+        ));
+
+        $sql = "SELECT * FROM commondata.cronjobs ";
+        $this->buildJSTable($this->_getDAO("CronjobsDAO"), $this->query($sql)->getRows());
+
+    }
+
+
+
+
+    public function product_pricing_simulate() {
+        $OrderTypes = new OrderTypes();
+        $select = $OrderTypes->getSelectablePartiesForRequest($this->getCurrentUser(), 1);
+
+        $this->buildForm(array(
+                $this->buildInput("party_id" , "Party Location","select", $this->buildSelectOption($select)),
+                $this->buildInput("appraisal_product_id","Appraisal Product","select", $this->buildSelectOptionFromDAO("AppraisalProductsDAO")),
+                $this->buildInput("zipcode","Zip Code", "input", ""),
+                $this->buildInput("appraiser_id","Appraiser", "select", $this->buildSelectOptionFromDAO("ContactsDAO")),
+                $this->buildInput("amc_id", "AMC","select", $this->buildSelectOptionFromDAO("PartiesDAO")),
+                $this->buildInput("total_complexities","Total Complexities", "text","0"),
+                $this->buildInput("appraisal_id","Appraisal ID (optional)","text",""),
+                $this->buildInput("check_amount","Check Amount (optional)","text","")
+
+            ));
+        $appraisal_product_id = $this->getValue("appraisal_product_id","");
+        $zipcode = $this->getValue("zipcode","");
+        $appraiser_id = $this->getValue("appraiser_id","");
+        $amc_id = $this->getValue("amc_id","");
+        $party_id = $this->getValue("party_id","1");
+        $total_complexities = $this->getValue("total_complexities",0);
+        $appraisal_id = $this->getValue("appraisal_id","");
+        $check_amount = $this->getValue("check_amount","");
+
+        if($appraisal_product_id!="" & $zipcode!="") {
+            $AMCID = $amc_id;
+            $AppraiserID = $appraiser_id;
+            $zipcodesDAO = $this->_getDAO("ZipcodesDAO");
+            $data = $zipcodesDAO->GetGeosByZip($zipcode)->getRows();
+            $state = $data[0]['state_abbrev'];
+            $city = $data[0]['city'];
+            $county = $data[0]['county'];
+            echo "Found Location {$state} {$city} {$county} ";
+            $AMCProductPricingRulesDAOExt = new AMCProductPricingRulesDAOExt();
+
+            if($check_amount!="") {
+
+                $sql = "
+                    SELECT * 
+                    FROM {$AMCProductPricingRulesDAOExt->table} AS aprl 
+                    JOIN amc_product_pricing_rule_type AS rt ON (rt.amc_product_pricing_rule_type_id = aprl.amc_product_pricing_rule_type_id)
+                    WHERE aprl.product_id=?  
+                    AND aprl.amount=?
+                    AND (aprl.amc_product_price_rule_value=? OR aprl.amc_product_price_rule_value=? OR aprl.amc_product_price_rule_value=?  OR aprl.amc_product_price_rule_value=? )
+                    ORDER BY rt.amc_product_pricing_rule_type_sort_order DESC";
+
+                    $params = array($appraisal_product_id, $check_amount, $state, $city, $county, $zipcode);
+                    echo "<br>";
+                    echo $sql;
+                    print_r($params);
+                    $this->buildJSTable($AMCProductPricingRulesDAOExt, $AMCProductPricingRulesDAOExt->Execute($sql,$params)->getRows(),array(
+                        "viewOnly"  => true
+                    ));
+
+
+                $sql = '
+                    SELECT * 
+                    FROM pricing_template AS aprl 
+                    JOIN amc_product_pricing_rule_type AS rt ON (rt.amc_product_pricing_rule_type_id = aprl.pricing_rule_type_id)
+                    WHERE  aprl.product_id=?
+                    AND aprl.amount=?
+                    AND (aprl.amc_product_price_rule_value=? OR aprl.amc_product_price_rule_value=? OR aprl.amc_product_price_rule_value=? OR aprl.amc_product_price_rule_value=? )
+                    ORDER BY rt.amc_product_pricing_rule_type_sort_order desc';
+
+
+
+                $params = array($appraisal_product_id, $check_amount, $state, $city, $county, $zipcode);
+                echo $sql;
+                print_r($params);
+                $this->buildJSTable($AMCProductPricingRulesDAOExt, $AMCProductPricingRulesDAOExt->Execute($sql,$params)->getRows(),array(
+                    "viewOnly"  => true
+                ));
+
+
+                $sql = "
+                    SELECT * 
+                    FROM {$AMCProductPricingRulesDAOExt->table} AS aprl 
+                    JOIN amc_product_pricing_rule_type AS rt ON (rt.amc_product_pricing_rule_type_id = aprl.amc_product_pricing_rule_type_id)
+                    WHERE aprl.product_id=?  
+                    AND aprl.amount=?               
+                    ORDER BY rt.amc_product_pricing_rule_type_sort_order DESC";
+
+                $params = array($appraisal_product_id, $check_amount);
+                echo "<br>";
+                echo $sql;
+                print_r($params);
+                $this->buildJSTable($AMCProductPricingRulesDAOExt, $AMCProductPricingRulesDAOExt->Execute($sql,$params)->getRows(),array(
+                    "viewOnly"  => true
+                ));
+
+
+                $sql = '
+                    SELECT * 
+                    FROM pricing_template AS aprl 
+                    JOIN amc_product_pricing_rule_type AS rt ON (rt.amc_product_pricing_rule_type_id = aprl.pricing_rule_type_id)
+                    WHERE  aprl.product_id=?
+                    AND aprl.amount=?                
+                    ORDER BY rt.amc_product_pricing_rule_type_sort_order desc';
+
+                $params = array($appraisal_product_id, $check_amount);
+                echo $sql;
+                print_r($params);
+                $this->buildJSTable($AMCProductPricingRulesDAOExt, $AMCProductPricingRulesDAOExt->Execute($sql,$params)->getRows(),array(
+                    "viewOnly"  => true
+                ));
+
+            } else {
+
+              
+                $AppraisalObj = new stdClass();
+                $AppraisalObj->AMC_ID = $amc_id;
+                $AppraisalObj->PARTY_ID = $party_id;
+                $AppraisalObj->APPRAISER_ID = $appraiser_id;
+                $AppraisalObj->VENDOR_PRICING_OVERRIDE_FLAG = false;
+                $AppraisalObj->STATE = $state;
+                $AppraisalObj->COUNTRY = $county;
+                $AppraisalObj->CITY = $city;
+
+                if(!empty($appraisal_id)) {
+                    $o->APPRAISAL_ID = $appraisal_id;
+                    $AppraisalObj = $this->_getDAO("AppraisalsDAO")->Get($o);
+                    if(empty($AMCID)) {
+                        $AMCID = $AppraisalObj->AMC_ID;
+                    }
+                    elseif(empty($appraiser_id)) {
+                        $AppraiserID = $AppraisalObj->APPRAISER_ID;
+                    }
+                    $party_id = $AppraisalObj->PARTY_ID;
+                }
+
+                $productObj->APPRAISAL_PRODUCT_ID = $appraisal_product_id;
+                $UnfulfilledAppraisalProducts = array($productObj);
+
+                foreach($UnfulfilledAppraisalProducts as $k=>$ProductObj){
+                    unset($pObj);
+                    echo "{$ProductObj->APPRAISAL_PRODUCT_ID} => ";
+                    if($AMCID < 0) $AMCID = 0;
+                    if($AppraiserID < 0) $AppraiserID = 0;
+                    $VendorPrice = (empty($AMCID) && empty($AppraiserID))
+                        ? 'QUOTE'
+                        : $AMCProductPricingRulesDAOExt->GetVendorPriceForProduct($ProductObj->APPRAISAL_PRODUCT_ID, $AppraisalObj, $AMCID, $AppraiserID);
+
+                    // if the lender has their own pricing sheet to charge the BO, use that pricing instead
+                    $LenderPrice = Utils::DoWeOverrideWithVendorPricing("", $party_id)
+                        ? $AMCProductPricingRulesDAOExt->GetLenderPriceForProduct($ProductObj->APPRAISAL_PRODUCT_ID,$AppraisalObj)
+                        : $VendorPrice;
+                    if(Utils::DoWeOverrideWithVendorPricing("", $party_id)) {
+                        self::debug("DoWeOverrideWithVendorPricing", "YES use LENDER PRICING");
+                    } else {
+                        self::debug("DoWeOverrideWithVendorPricing", "NO use VENDOR Pricing Above");
+                    }
+
+                    $pObj->APPRAISAL_PRODUCT_ID = $ProductObj->APPRAISAL_PRODUCT_ID;
+                    $pObj->VENDOR_AMOUNT = $VendorPrice;
+                    $pObj->AMOUNT = $LenderPrice;
+
+                    //if any value is 'QUOTE' set the appropriate quote flags
+                    if('QUOTE' == $pObj->VENDOR_AMOUNT){
+                        $pObj->VENDOR_AMOUNT = null;
+                        $pObj->VENDOR_IS_QUOTE_FLAG = true;
+                    } else {
+                        $pObj->VENDOR_IS_QUOTE_FLAG = false;
+                    }
+                    if('QUOTE' == $pObj->AMOUNT){
+                        $pObj->AMOUNT = null;
+                        $pObj->IS_QUOTE_FLAG = true;
+                    } else {
+                        $pObj->IS_QUOTE_FLAG = false;
+                    }
+
+                    // multiply the complexity fees based on complexity_questions answered and the new complexity_bundle config
+                    if($ProductObj->APPRAISAL_PRODUCT_ID == 26) {
+
+                        if($total_complexities > 0) {
+                            $bundle_num = $this->_locationConfig()->getValue('NUM_COMPLEXITY_IN_A_BUNDLE', $party_id);
+                            if($bundle_num >= 1) {
+                                $complexity_fee_multiplier = ceil($total_complexities / $bundle_num);
+                                if(is_numeric($pObj->VENDOR_AMOUNT)) $pObj->VENDOR_AMOUNT = $pObj->VENDOR_AMOUNT * $complexity_fee_multiplier;
+                                if(is_numeric($pObj->AMOUNT)) $pObj->AMOUNT = $pObj->AMOUNT * $complexity_fee_multiplier;
+                            }
+                        }
+                    }
+
+                    echo "<pre>";
+                    print_r($pObj);
+                    echo "</pre>";
+                }
+
+                // end check amount
+            }
+
 
         }
     }
@@ -256,13 +504,13 @@ class specials_AdminSupport extends specials_baseSpecials
         if($role_types) {
             $sql = "SELECT * FROM commondata.role_types ";
             $this->buildJSTable($this->_getDAO("RoleTypesDAO"), $this->query($sql)->GetRows(), array(
-                "viewonly" => true
+                "viewOnly" => true
             ));
         }
         if($user_types) {
             $sql = "SELECT * FROM commondata.user_types ";
             $this->buildJSTable($this->_getDAO("UserTypesDAO"), $this->query($sql)->GetRows(), array(
-                "viewonly" => true
+                "viewOnly" => true
             ));
         }
     }
@@ -274,6 +522,7 @@ class specials_AdminSupport extends specials_baseSpecials
 
         $this->buildForm(array(
             $this->buildInput("username","Username","text"),
+            $this->buildInput("email","Email","text"),
             $this->buildInput("first_name","First Name","text"),
             $this->buildInput("last_name","Last Name","text"),
             $this->buildInput("user_type","User Type","text", 1),
@@ -292,6 +541,7 @@ class specials_AdminSupport extends specials_baseSpecials
             $this->title = "Internal Users";
             $this->data = array(array(
                 "username"  => $username,
+                "email"  => $this->getValue("email"),
                 "first_name" => $this->getValue("first_name"),
                 "last_name" => $this->getValue("last_name"),
                 "user_type" => $this->getValue("user_type"),
@@ -436,18 +686,20 @@ class specials_AdminSupport extends specials_baseSpecials
 
         if($username!="" || $new_username !="") {
             $UsersDAO = $this->_getDAO("UsersDAO");
-            $current_user = $UsersDAO->Execute("SELECT * FROM users where user_name=? ", array($username));
-            $this->buildJSTable($UsersDAO, $current_user->getRows());
-            $current_user = $current_user->fetchObject();
+            $current_user_data = $UsersDAO->Execute("SELECT * FROM users where user_name=? ", array($username))->getRows();
+            $this->buildJSTable($UsersDAO, $current_user_data);
+            $current_user = isset($current_user_data[0]) ? $current_user_data[0] : array();
 
-            $new_user = $UsersDAO->Execute("SELECT * FROM users where user_name=? ", array($new_username));
-            $this->buildJSTable($UsersDAO, $new_user->getRows());
-            $new_user = $new_user->fetchObject();
+            $new_user_data = $UsersDAO->Execute("SELECT * FROM users where user_name=? ", array($new_username))->getRows();
+            $this->buildJSTable($UsersDAO, $new_user_data);
+            $new_user = isset($new_user_data[0]) ? $new_user_data[0] : array();
 
             if($options == "check" ) {
                 $this->h4("Check Orders {$username}");
+                $orders = $this->query("select appraisal_id, appraiser_id, requested_by from appraisals where requested_by=? OR appraiser_id=? ", array($current_user['user_id'], $current_user['contact_id']))->getRows();
+
                 $this->buildJSTable($this->_getDAO("AppraisalsDAO"),
-                    $this->query("select appraisal_id, appraiser_id, requested_by from appraisals where requested_by=? OR appraiser_id=? ", array($current_user->USER_ID, $current_user->CONTACT_ID))
+                    $orders
                 );
             }
 
@@ -456,6 +708,14 @@ class specials_AdminSupport extends specials_baseSpecials
                 $this->query("UPDATE users SET user_name=? WHERE user_name=? ", array($new_username, $username));
                 $this->query("UPDATE commondata.global_users SET user_name=? WHERE user_name=? ", array($new_username, $username));
                 echo " UPDATE GLOBAL Users";
+            }
+
+            if($options == "move" && !empty($new_user) && !empty($current_user)) {
+                echo "Move Orders from {$current_user['user_id']} to {$new_user['user_id']}";
+                $this->query("UPDATE appraisals set requested_by=? WHERE requested_by=? ", array($new_user['user_id'],$current_user['user_id']));
+                if(!empty($new_user['contact_id']) && !empty($current_user['contact_id'])) {
+                    $this->query("UPDATE appraisals set appraiser_id=? WHERE appraiser_id=? ", array($new_user['contact_id'],$current_user['contact_id']));
+                }
             }
 
         }
@@ -470,7 +730,7 @@ class specials_AdminSupport extends specials_baseSpecials
                 WHERE A.complete_date is null
                 ORDER BY A.start_date DESC ";
         $this->buildJSTable($this->_getDAO("AppraisalsAciSkyDeliveryDAO"), $this->query($sql)->GetRows(), array(
-            "viewonly"  => true
+            "viewOnly"  => true
         ));
     }
 
@@ -687,7 +947,9 @@ class specials_AdminSupport extends specials_baseSpecials
 
     public function buildSelectOptionFromDAO($dao_name, $extra = array()) {
         $dao = $this->_getDAO($dao_name);
-        $sql = "SELECT * FROM {$dao->table} ";
+        $sort_column = $this->getNameSortColumn($dao->table);
+        $order_by = $sort_column != "" ? "ORDER BY {$sort_column} ASC" : "";
+        $sql = "SELECT * FROM {$dao->table} {$order_by} ";
         $data = $dao->execute($sql)->getRows();
         $res = array();
         $tmp_pk = strtolower($dao->pk);
@@ -699,9 +961,17 @@ class specials_AdminSupport extends specials_baseSpecials
                 if(strpos($col,"_id") !== false && empty($tmp_pk)) {
                     $tmp_pk = $col;
                 }
-                if(strpos($col,"name") !== false) {
+                if(strpos($col,"first_name") !== false) {
                     $tmp_value = $value;
                 }
+                if(strpos($col,"last_name") !== false) {
+                    $tmp_value .= ' '. $value;
+                }
+
+                if(strpos($col,"name") !== false && empty($tmp_value)) {
+                    $tmp_value = $value;
+                }
+
                 if(strpos($col, "enable") !== false) {
                     $enabled = $value;
                 }
@@ -723,17 +993,36 @@ class specials_AdminSupport extends specials_baseSpecials
 
     public function read_email() {
         $this->buildForm(array(
-            $this->buildInput("appraisal_id","Appraisal ID","text")
+            $this->buildInput("appraisal_id","Appraisal ID","text"),
+            $this->buildInput("message_to","Email Sent To","text")
         ));
         $appraisal_id = $this->getValue("appraisal_id","");
-        if($appraisal_id > 0) {
-            $sql = "SELECT A.appraisal_id, B.notification_job_id, B.job_completed_flag, B.subject, B.message_to , B.message_from, B.bounce_flag , B.bounce_reason FROM notification_jobs_appraisals AS A
+        $message_to = $this->getValue("message_to","");
+
+        if($appraisal_id > 0 || $message_to!="") {
+            $data_exe = array();
+            $where_string = "";
+            if($appraisal_id > 0) {
+                $where_string .= "AND A.appraisal_id=? ";
+                $data_exe[] = $appraisal_id;
+            }
+            if($message_to != "") {
+                $where_string .= "AND B.message_to=? ";
+                $data_exe[] = $message_to;
+            }
+
+            $sql = "SELECT A.appraisal_id, B.notification_job_id, B.job_completed_flag, B.subject, B.message_to , B.message_from, B.bounce_flag , B.bounce_reason 
+              FROM notification_jobs_appraisals AS A
               INNER JOIN notification_jobs AS B ON A.notification_job_id = B.notification_job_id
-              WHERE A.appraisal_id=?
+              WHERE A.appraisal_id IS NOT NULL {$where_string}
+              GROUP BY A.appraisal_id, B.notification_job_id, B.job_completed_flag, B.subject, B.message_to , B.message_from, B.bounce_flag , B.bounce_reason
+              ORDER BY B.notification_job_id DESC 
+              LIMIT 500
               ";
-            $rows = $this->_getDAO("AppraisalsDAO")->Execute($sql, array($appraisal_id))->GetRows();
+            $rows = $this->_getDAO("AppraisalsDAO")->Execute($sql, $data_exe)->GetRows();
             $this->buildJSTable($this->_getDAO("NotificationJobsDAO"), $rows);
         }
+
     }
 
     public function buildInput($id, $label, $type, $default = "") {
@@ -918,7 +1207,7 @@ class specials_AdminSupport extends specials_baseSpecials
             $tbody .="
                 <td  data-primary-value='{$row_id}' data-primary-key='{$primary_key}'  data-table='{$table}' >                    
                     ";
-            if($row_id!="" && !isset($options['viewonly'])) {
+            if($row_id!="" && !isset($options['viewOnly'])) {
                 $tbody .= "<button data-id='{$special_update}' onclick='updateJSRow(this);'  data-primary-value='{$row_id}' > Update </button>";
                 $tbody .= "<button data-id='{$special_update}'  onclick='deleteJSrow(this);'  data-primary-value='{$row_id}' > Delete</button>";
             }
@@ -933,7 +1222,7 @@ class specials_AdminSupport extends specials_baseSpecials
                             <button data-sql='$data_sql_id' data-table='$table' data-cols='".implode(", ",$cols)."' onclick='add_insert_into(this)'> Add INSERT INTO </button>
                             <button data-sql='$data_sql_id' data-table='$table' data-col-1='{$cols[0]}'  data-col-2='{$cols[1]}' onclick='add_delete_from(this)'> Add DELETE FROM </button>
                             <button data-sql='$data_sql_id' data-table='$table' data-col-1='{$cols[0]}'  data-col-2='{$cols[1]}' onclick='add_update_from(this)'> Add Update </button>";
-        if(isset($options['viewonly'])) {
+        if(isset($options['viewOnly'])) {
             $sql_table = "";
         }
         $table = $sql_table."<table class=table width='100%'><thead>{$header}<th></th></thead><tbody>{$tbody}</tbody></table>";
@@ -1090,7 +1379,28 @@ class specials_AdminSupport extends specials_baseSpecials
         }
     }
 
-    public function search_tables_has_column() {
+    public function getColumnsFromTable($table) {
+        $info = SystemSettings::get();
+        $sql = "SELECT *
+                        FROM information_schema.columns
+                        WHERE table_schema = ?
+                        and table_name = ?";
+        $columns = $this->_getDAO("AppraisalsDAO")->Execute($sql, array($info['PG_SQL']['USER'], $table))->GetRows();
+        return $columns;
+    }
+
+    public function getNameSortColumn($table) {
+        $columns = $this->getColumnsFromTable($table);
+        foreach($columns as $col) {
+            $name = $col['column_name'];
+            if(strpos(strtolower($name),'name') !== false) {
+                return $name;
+            }
+        }
+        return $columns[0]['column_name'];
+    }
+
+    public function search_table_has_column() {
         $column_name = isset($_POST['column_name']) ? $_POST['column_name'] : "";
         $this->buildForm(array(
             $this->buildInput("column_name","Enter Column Name","text","appraisal_id")
@@ -1353,6 +1663,7 @@ $(function() {
  <li class="dropdown">
           <a href="#" class="dropdown-toggle" data-toggle="dropdown" role="button" aria-haspopup="true" aria-expanded="false">Appraisals <span class="caret"></span></a>
           <ul class="dropdown-menu">
+            <li><a href="?action=product_pricing_simulate">Product Pricing Simulate</a></li>
             <li><a href="?action=appraisal_products">Appraisal Products Fee</a></li>
             <li><a href="?action=appraisal_refund">Refund</a></li>
             <li><a href="?action=clear_ucdp_error">Clear UCDP Errors & HardStop</a></li>
@@ -1361,7 +1672,8 @@ $(function() {
             <li><a href="?action=aci_sky_review">ACI Sky Review</a></li>              
             <li role="separator" class="divider"></li>
             <li><a href="?action=check_user_associ">Add User Related to Orders</a></li>
-            <li><a href="?action=read_email">Read Email</a></li>                   
+            <li><a href="?action=read_email">Read Email</a></li>
+           <li><a href="?action=getNotificationObject">Simulate Email Objects</a></li>    
           </ul>
         </li>
               
@@ -1395,7 +1707,9 @@ $(function() {
         <button type="submit"  class="btn btn-default">Open</button>
       </form>
       <ul class="nav navbar-nav navbar-right">
-        <li><a href="/tandem/logout">Logout</a></li>        
+        <li><a href="/tandem/logout">Logout</a></li>   
+        <li><a href="?action=cronjobs">Jobs Failed: <span style="color:red;">'.$this->cronjobs(true).'</span></a></li>
+        <li><a href="/tandem/newadmin" target="_blank">Setting</a></li>  
         <li class="dropdown">
           <a href="#" class="dropdown-toggle" data-toggle="dropdown" role="button" aria-haspopup="true" aria-expanded="false">Dev <span class="caret"></span></a>
           <ul class="dropdown-menu">
@@ -1421,5 +1735,198 @@ EOF;
         echo $str;
     }
 
+    public static function debug($text, $value) {
+        echo $text." = ";
+        if(is_bool($value)) {
+            if($value) {
+                echo " TRUE ";
+            } else {
+                echo " FALSE ";
+            }
+        } else {
+            if(is_array($value) || is_object($value)) {
+                print_r($value);
+            } else {
+                echo $value;
+            }
+        }
+        echo "<br>";
+    }
+
 
 }
+
+class AdminSupport extends specials_AdminSupport {
+
+}
+
+
+class AMCProductPricingRulesDAOExt extends AMCProductPricingRulesDAO {
+
+    public function GetVendorPriceForProduct($product_id, $appraisal_obj, $amc_id=0, $contact_id=0) {
+        // Either amc_id or contact_id is required
+        if(empty($amc_id) && empty($contact_id)) return 'QUOTE';
+
+        // Get Location Party ID
+        $location_party_id = $this->_locationConfig()->isEnabled('PRICE_BY_HIERARCHY_FLAG', $appraisal_obj->PARTY_ID)? $appraisal_obj->PARTY_ID : 1;
+        AdminSupport::debug("PRICE_BY_HIERARCHY_FLAG", $location_party_id);
+
+        // Get Vendor Location Pricing
+        $pricing_rules = $this->_getPricingforProduct($product_id, $amc_id, $contact_id, $location_party_id);
+        $rule = "LOCATION";
+        // Get Vendor Pricing
+        if(empty($pricing_rules)) {
+            $pricing_rules = $this->_getPricingforProduct($product_id, $amc_id, $contact_id);
+            $rule = "VENDOR PRICING";
+        }
+
+        // Get Vendor Default Pricing
+        if(empty($pricing_rules)) {
+            $pricing_rules = $this->_getDefaultTemplatePricingforProduct($product_id, $location_party_id);
+            $rule = "VENDOR DEFAULT PRICING TEMPLATE";
+        }
+        AdminSupport::debug("PRICING RULE", $rule);
+        if (is_object($pricing_rules)){
+            while($rule = $pricing_rules->fetchNextObject()){
+                echo "<pre>";
+                print_r($rule);
+                echo "</pre>";
+                if($this->MatchRule($rule, $appraisal_obj)){
+                    $x = ($rule->IS_QUOTE_FLAG == 't')? 'QUOTE' : $rule->AMOUNT;
+                    AdminSupport::debug("MATCHED PRICING ABOVE", $x);
+                    return $x;
+                }
+            }
+        }
+        AdminSupport::debug("NO MATCHED","QUOTE RETURN");
+        return 'QUOTE';
+    }
+
+    private function _getPricingforProduct($product_id, $amc_id=0, $contact_id=0, $location_party_id=0){
+        $sql = "
+			SELECT * 
+			FROM {$this->table} AS aprl 
+			JOIN amc_product_pricing_rule_type AS rt ON (rt.amc_product_pricing_rule_type_id = aprl.amc_product_pricing_rule_type_id)
+			WHERE aprl.product_id=?"
+            . $this->_getSQLcondition($amc_id, $contact_id, $location_party_id)
+            . ' ORDER BY rt.amc_product_pricing_rule_type_sort_order DESC';
+
+        $params = array_merge(array($product_id), $this->_getConditionParams($amc_id, $contact_id, $location_party_id));
+
+        $pricing_rules = $this->Execute($sql, $params);
+
+        if($pricing_rules->RecordCount() > 0){
+            return $pricing_rules;
+        }
+        elseif(!empty($location_party_id) && $this->_locationConfig()->isEnabled('PRICE_BY_HIERARCHY_FLAG', $location_party_id)){
+            $parent_id = $this->_getDAO('PartyHierarchyDAO')->GetParent($location_party_id);
+            if (!empty($parent_id)){
+                return $this->_getPricingforProduct($product_id, $amc_id, $contact_id, $parent_id);
+            }
+        }
+        return FALSE;
+
+    }
+
+    private function _getSQLcondition($amc_id=0, $contact_id=0, $location_party_id=0) {
+        $sql = '';
+        $sql .= !empty($amc_id)
+            ? ' AND amc_id = ? '
+            : ' AND (amc_id IS NULL OR amc_id = 0)';
+
+        $sql .= !empty($contact_id)
+            ? ' AND contact_id = ? '
+            : ' AND (contact_id IS NULL OR contact_id = 0)';
+
+        $sql .= !empty($location_party_id)
+            ? ' AND location_party_id = ? '
+            : ' AND (location_party_id IS NULL OR location_party_id = 0)';
+        return $sql;
+    }
+
+    private function _getDefaultTemplatePricingforProduct($product_id, $party_id){
+        $sql = '
+			SELECT * 
+			FROM pricing_template AS aprl 
+			JOIN amc_product_pricing_rule_type AS rt ON (rt.amc_product_pricing_rule_type_id = aprl.pricing_rule_type_id)
+			WHERE aprl.location_party_id = ? 
+				AND aprl.product_id=?
+			ORDER BY rt.amc_product_pricing_rule_type_sort_order desc';
+        $RulesRS = $this->Execute($sql, array($party_id, $product_id));
+
+        if ($RulesRS->RecordCount()>0){
+            return $RulesRS;
+        }
+        elseif ($this->_locationConfig()->isEnabled('PRICE_BY_HIERARCHY_FLAG', $party_id)){
+            $parent_id = $this->_getDAO('PartyHierarchyDAO')->GetParent($party_id);
+            if(!empty($parent_id)){
+                return $this->_getDefaultTemplatePricingforProduct($product_id, $parent_id);
+            }
+        }
+        return FALSE;
+    }
+
+    private function _getConditionParams($amc_id=0, $contact_id=0, $location_party_id=0) {
+        $param = array();
+        if(!empty($amc_id)) $param[] = $amc_id;
+        if(!empty($contact_id)) $param[] = $contact_id;
+        if(!empty($location_party_id)) $param[] = $location_party_id;
+        return $param;
+    }
+
+    public function GetLenderPriceForProduct($product_id, $appraisal_obj){
+        // Get Location Party ID
+        $location_party_id = $this->_locationConfig()->isEnabled('PRICE_BY_HIERARCHY_FLAG', $appraisal_obj->PARTY_ID)? $appraisal_obj->PARTY_ID : 1;
+        $rule = "LOCATION";
+        // Get Lender Location Pricing
+        $pricing_rules = $this->_getPricingforProduct($product_id, 0, 0, $location_party_id);
+        AdminSupport::debug("LENDER PRICING", $rule);
+        if (is_object($pricing_rules)){
+            while($rule = $pricing_rules->fetchNextObject()){
+                echo "<pre>";
+                print_r($rule);
+                echo "</pre>";
+                if($this->MatchRule($rule, $appraisal_obj)){
+                    $x =  ($rule->IS_QUOTE_FLAG == 't')? 0 : $rule->AMOUNT;
+                    AdminSupport::debug("MATCHED PRICING LENDER ABOVE", $x);
+                    return $x;
+
+                }
+            }
+        }
+        AdminSupport::debug("NO MATCHED LENDER", 0);
+        return 0;
+    }
+
+}
+
+class BaseEngineEx extends BaseEngine {
+    function _processJob($job) {
+
+    }
+
+    public function makeNotification($appraisal, $notificationType)
+    {
+        $notification = new \stdClass();
+        $notification->Options = $this->_getOptions();
+        $notification->ConnectionObj = $this->_getConnectionObj();
+        $notification->Appraisal = $appraisal;
+        $notification->Client = $this->_siteConfig()->getLenderInfo();
+
+        switch ($notificationType) {
+            case EmailNotification::AMC_ASSIGNED_NOTIFICATION :
+            case EmailNotification::ACCEPT_REJECT_FROM_EMAIL_NOTIFICATION :
+                $notification->FromUser = $this->getAppraisalCoordinatorEmail($appraisal->PARTY_ID);
+                $notification->ToUsers = $this->getAmcOrAppraiserUsers($appraisal);
+                break;
+            case EmailNotification::FAILED_ASSIGNMENT_NOTIFICATION :
+                $notification->FromUser = $this->getOutgoingEmail($appraisal->PARTY_ID);
+                $notification->ToUsers = $this->_getDAO('AppraisalsDAO')->GetAssignmentIssueUsers($appraisal->APPRAISAL_ID);
+                break;
+            default:
+        }
+
+        return $notification;
+    }
+}
+
