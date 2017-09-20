@@ -84,11 +84,43 @@ class specials_AdminSupport extends specials_baseSpecials
             case "getNotificationObject":
                 $this->getNotificationObject();
                 break;
+            case "generateInvoice":
+                $this->generateInvoice();
+                break;
             default:
 
                 break;
 
         }
+    }
+
+    public function generateInvoice() {
+        /*
+         * $f->FILE_NAME = 'invoice_'.$AppraisalID.'.pdf';
+			$f->FILE_TYPE = 'application/pdf';
+			$f->FORM_TYPE_NAME = 'Invoice';
+			require_once('classes/invoices/PayerInvoiceFactory.php');
+			$pdf = PayerInvoiceFactory::Create($AppraisalID);
+			$data = $pdf->Output('invoice_'.$AppraisalID.'.pdf','S');
+			$f->FILE_SIZE = strlen($data);
+			$f->FILE_DATA = base64_encode($data);
+			$fMetaData[] = $f;
+         */
+
+        $this->buildForm(array(
+            $this->buildInput("appraisal_id","Appraisal IDS (,)","text")
+        ));
+        $appraisal_id = $this->getValue("appraisal_id");
+        if($appraisal_id!="") {
+            $list = explode(",",$appraisal_id);
+            echo " Press CTRL + S to save all files";
+            foreach($list as $appraisal_id) {
+                $appraisal_id=trim($appraisal_id);
+                echo " <a href='/tandem/download-invoice/?type=a&appraisal_id={$appraisal_id}&filename=/Invoice_{$appraisal_id}.pdf'  title='Invoice_{$appraisal_id}.pdf' >Invoice_{$appraisal_id}.pdf</a> ";
+            }
+
+        }
+
     }
 
 
@@ -1242,7 +1274,7 @@ class specials_AdminSupport extends specials_baseSpecials
             $this->buildInput("sky_action","Action","select", $this->buildSelectOption(array(
                 "0" => "Check Current Status",
                 "1" => "Fix Status 1",
-                "resubmit"  => "Resubmit / or Upload Location"
+                "2"  => "Resubmit / or Upload Location"
             )))
         ), array(
             "confirm"   => true
@@ -1255,7 +1287,8 @@ class specials_AdminSupport extends specials_baseSpecials
             $existing_data = $existing_review->GetRows();
             $existing_review = $existing_review->fetchObject();
             $this->buildJSTable($AppraisalsAciSkyReviewDAO, $existing_data);
-            if((Int)$action !== 0) {
+            echo " -> Action: $action <br>";
+            if($action > 0) {
 
                 echo "Fixing ACI Review <br>";
                 if(empty($existing_review->FILE_ID)) {
@@ -1275,29 +1308,27 @@ class specials_AdminSupport extends specials_baseSpecials
                 print_r($json);
                 $this->print_out("Checking...");
 
-                $aci = new AciSkyReviewPlugin();
+                $aci = new AdminACI();
                 $aci->setAppraisalId($appraisal_id);
                 $aci->setFileID($file_id);
 
                 // DO Re-upload only if STATUS = 1
                 $this->print_out("AASR has ACI Status = {$existing_review->STATUS}");
-                if(empty($existing_review->STATUS) && $action == "resubmit") {
+
+                if((empty($existing_review->STATUS) || $existing_review->STATUS < 0) && $action == 2) {
                     $this->print_out("Empty  {$json['UploadLocation']} + But need resubmit.");
                     $job = new stdClass();
                     $job->APPRAISAL_ID = $appraisal_id;
                     $job->FILE_ID = $file_id;
-                    $aci->Execute($job);
+                    $aci->Execute($job, true);
                     $this->print_out("Run Execute function. Check back later");
                 }
-                else  if($existing_review->STATUS == 1 || $action == "resubmit") {
+                else  if($existing_review->STATUS == 1 || $action == 2) {
                     $this->print_out("Using Upload Location {$json['UploadLocation']}");
                     $upload_result = $aci->uploadFile($json['UploadLocation']);
                     $this->print_out("HTTP CODE:".$upload_result['HTTP_CODE']);
 
-                    if($upload_result['HTTP_CODE'] == 200) {
-                        $log = new stdClass();
-                        $log->AASR_ID = $existing_review->AASR_ID;
-                        $upload_log = $aci->logFileUpload($log);
+                    if($upload_result['successful']) {
                         $this->print_out("Please wait a little bit for engine update the file in appraisal detail ".$appraisal_id);
                     } else {
                         $this->print_out(" PLZ CHECK upload_result in debug");
@@ -1696,7 +1727,10 @@ $(function() {
           <a href="#" class="dropdown-toggle" data-toggle="dropdown" role="button" aria-haspopup="true" aria-expanded="false">Settings <span class="caret"></span></a>
           <ul class="dropdown-menu">
             <li><a href="?action=change_location_parent">Change Location Parents</a></li>
-            <li><a href="?action=changes_log">Search Changes Log</a></li>              
+            <li><a href="?action=changes_log">Search Changes Log</a></li>
+            <li role="separator" class="divider"></li>
+            <li><a href="?action=generateInvoice">Mass Gen Invoices</a></li>
+                          
           </ul>
         </li>        
       </ul>
@@ -1928,5 +1962,216 @@ class BaseEngineEx extends BaseEngine {
 
         return $notification;
     }
+}
+
+class AdminACI extends AciSkyReviewPlugin {
+    /**
+     * Set Appraisal ID
+     * @param integer - appraisal_id
+     */
+    private $aci_sky_review;
+    private $appraisal;
+    private $appraisal_id;
+    private $dao = array();
+    private $debug=false;
+    private $file_id;
+    private $location_config;
+    private $web_service_user;
+
+    private function debug($message, $title='') {
+        echo $message." : ". $title."<br>";
+    }
+
+
+    public function setAppraisalId($appraisal_id) {
+        $this->appraisal_id = $appraisal_id;
+    }
+
+    public function setFileID($file_id){
+        $this->file_id = $file_id;
+        $this->debug('Set File Id:'.$file_id);
+    }
+
+    private function createNewOrder() {
+        $this->debug('Start', 'Create New Order');
+        $result = $this->aciSkyReview()->createNewOrder($this->debug);
+        $this->debug($result, 'New Order Submission Result');
+
+        // the creation is successful
+        $this->debug('start', 'Log Order Submission');
+        if($result['HTTP_CODE'] == 201) {
+            $return =  array(
+                'successful'=> TRUE,
+                'return'	=> json_decode($result['RETURN']),
+                'log'		=> $this->aciSkyReview()->logOrderSubmission($result['RETURN'], AciSkyReviewStatus::ORDER_CREATED )
+            );
+        }
+        // Failed to create the order
+        else {
+            $return = array(
+                'successful'=> FALSE,
+                'log'		=> $this->aciSkyReview()->logOrderSubmission(json_encode($result), AciSkyReviewStatus::ORDER_CREATION_FAILED )
+            );
+        }
+        $this->debug($return, 'Log Order Submission Result');
+        return $return;
+    }
+
+    public function Execute($Job, $new_job = false ){
+        try{
+            // Set Appraisal ID
+            $this->setAppraisalId($Job->APPRAISAL_ID);
+
+            // Check if ACI Sky Review is enabled
+            if ($this->aciSkyReview()->isSkyReviewEnabled()) {
+                $this->debug('ACI Sky Review is enabled', 'Execute');
+
+                // This variable determine if we can upload appraisal report file
+                $can_upload_file = FALSE;
+
+                // This variable determine if we need to update the log or create a new log
+                // NULL value means create a new log
+                // Integer value means update the current log
+                $aasr_id = NULL;
+
+                // Set File ID
+                $this->setFileID($Job->FILE_ID);
+
+                // Check if we already have an order created
+                $reviews = $this->getDAO('AppraisalsAciSkyReviewDAO')->getByAppraisalId($this->getAppraisalId())->getRows();
+
+                // The was no prior ACI SKY Review submitted for the appraisal ID
+                if(count($reviews) == 0 || $new_job == true) {
+                    $this->debug('No Prior order');
+
+                    // Create a new order
+                    $new_order = $this->createNewOrder();
+
+                    // Upload appraisal report upon successful order creation
+                    if($new_order['successful']) {
+                        $this->debug('Upload appraisal report upon successful order creation');
+                        $can_upload_file = TRUE;
+
+                        $submission_response = $new_order['return'];
+                        $this->aciSkyReview()->setUploadLocation($submission_response->UploadLocation);
+
+                        $log = $new_order['log'];
+                        $aasr_id = $log->AASR_ID;
+                    }
+                }
+                else {
+                    $this->debug('We have Prior order');
+
+                    // Get Order has been successfuly created
+                    // But has not upload appraisal report file
+                    $order = $this->getDAO('AppraisalsAciSkyReviewDAO')->getNewCreatedOrder($Job->APPRAISAL_ID);
+                    if(!empty($order) && !$can_upload_file) {
+                        $this->debug('Order was successfully created by no file has been uploaded');
+                        $can_upload_file = TRUE;
+                        $aasr_id = $order->AASR_ID;
+
+                        $submission_response = json_decode($order->SUBMISSION_RESPONSE);
+                        $this->aciSkyReview()->setUploadLocation($submission_response->UploadLocation);
+                    }
+
+                    // Attempt to re-upload order that failed to upload report earlier
+                    $order = $this->getDAO('AppraisalsAciSkyReviewDAO')->getFailedUploadOrder($Job->APPRAISAL_ID, $Job->FILE_ID);
+                    if(!empty($order) && !$can_upload_file) {
+                        $this->debug('Attempt to re-upload order that failed to upload report earlier');
+                        $can_upload_file = TRUE;
+                        $aasr_id = $order->AASR_ID;
+                    }
+
+                    // re-upload existing one or Upload a new file
+                    $order = $this->getDAO('AppraisalsAciSkyReviewDAO')->getByAppraisalIdFileId($Job->APPRAISAL_ID, $Job->FILE_ID);
+                    $this->debug($order, 'getByAppraisalIdFileId');
+                    if(!$can_upload_file) {
+                        // Re-Upload existing one
+                        if(!empty($order)) {
+                            $this->debug('Re-Upload existing file');
+                            $can_upload_file = TRUE;
+                            $aasr_id = $order->AASR_ID;
+                        }
+                        // Upload a new file
+                        else {
+                            $this->debug('Upload a new file');
+                            $can_upload_file = TRUE;
+                        }
+                    }
+
+                }
+
+                // Upload the file to trigger the review
+                $upload_location = $this->aciSkyReview()->getUploadLocation();
+                $this->debug($upload_location, 'upload location');
+                $this->debug($can_upload_file, '$can_upload_file');
+
+                if($can_upload_file && !empty($upload_location)) {
+                    $upload_result = $this->uploadFile($upload_location, $aasr_id);
+
+                    // create event for another try
+                    $log = $upload_result['log'];
+                    if(!$upload_result['successful'] && $log->UPLOAD_ATTEMPT < 3) {
+                        $this->getDAO('EventsDAO')->CreateOrderQCReviewProductEvent($Job->APPRAISAL_ID, $Job->FILE_ID);
+                        return FALSE;
+                    }
+                }
+                return TRUE;
+            }
+            return FALSE;
+        }
+        catch (Exception $e){
+            $this->LogException($e);
+            return FALSE;
+        }
+    }
+
+    public function uploadFile($url, $aasr_id=NULL) {
+        $this->debug('Start', 'Upload File');
+        $upload_result = $this->aciSkyReview()->uploadFile($url, $this->getFileID(), $this->debug);
+        $this->debug($upload_result, 'Upload File Result');
+
+        // Log the result
+        $this->debug('start', 'Log File Upload result');
+        $return =  array(
+            'successful'=> $upload_result['HTTP_CODE'] == 200,
+            'return'	=> $upload_result,
+            'log'		=> $this->aciSkyReview()->logFileUpload(
+                $aasr_id,
+                $this->getFileID(),
+                json_encode($upload_result),
+                ($upload_result['HTTP_CODE'] == 200)? AciSkyReviewStatus::FILE_UPLOADED : AciSkyReviewStatus::FILE_UPLOAD_FAILED
+            )
+        );
+        $this->debug($return, 'Log File Upload Result');
+
+        return $return;
+    }
+
+    private function getFileID() {
+        return $this->file_id;
+    }
+
+
+    public function aciSkyReview() {
+        if(is_null($this->aci_sky_review)) {
+            $this->aci_sky_review = new AciSkyReview($this->getWebServiceUser(), $this->getAppraisalId());
+        }
+        return $this->aci_sky_review;
+    }
+
+    private function getWebServiceUser() {
+        if(is_null($this->web_service_user)) {
+            $user_id = $this->getDAO('UsersDAO')->GetUserId('WebServiceUser');
+            $User = new User();
+            $this->web_service_user = $User->FetchUser($user_id);
+        }
+        return $this->web_service_user;
+    }
+
+    private function getAppraisalId() {
+        return $this->appraisal_id;
+    }
+
 }
 
