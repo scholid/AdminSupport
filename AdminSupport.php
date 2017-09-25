@@ -167,16 +167,16 @@ class specials_AdminSupport extends specials_baseSpecials
         $select = $OrderTypes->getSelectablePartiesForRequest($this->getCurrentUser(), 1);
 
         $this->buildForm(array(
-                $this->buildInput("party_id" , "Party Location","select", $this->buildSelectOption($select)),
-                $this->buildInput("appraisal_product_id","Appraisal Product","select", $this->buildSelectOptionFromDAO("AppraisalProductsDAO")),
-                $this->buildInput("zipcode","Zip Code", "input", ""),
-                $this->buildInput("appraiser_id","Appraiser", "select", $this->buildSelectOptionFromDAO("ContactsDAO")),
-                $this->buildInput("amc_id", "AMC","select", $this->buildSelectOptionFromDAO("PartiesDAO")),
-                $this->buildInput("total_complexities","Total Complexities", "text","0"),
-                $this->buildInput("appraisal_id","Appraisal ID (optional)","text",""),
-                $this->buildInput("check_amount","Check Amount (optional)","text","")
+            $this->buildInput("party_id" , "Party Location","select", $this->buildSelectOption($select)),
+            $this->buildInput("appraisal_product_id","Appraisal Product","select", $this->buildSelectOptionFromDAO("AppraisalProductsDAO")),
+            $this->buildInput("zipcode","Zip Code", "input", ""),
+            $this->buildInput("appraiser_id","Appraiser", "select", $this->buildSelectOptionFromDAO("ContactsDAO")),
+            $this->buildInput("amc_id", "AMC","select", $this->buildSelectOptionFromDAO("PartiesDAO")),
+            $this->buildInput("total_complexities","Total Complexities", "text","0"),
+            $this->buildInput("appraisal_id","Appraisal ID (optional)","text",""),
+            $this->buildInput("check_amount","Check Amount (optional)","text","")
 
-            ));
+        ));
         $appraisal_product_id = $this->getValue("appraisal_product_id","");
         $zipcode = $this->getValue("zipcode","");
         $appraiser_id = $this->getValue("appraiser_id","");
@@ -208,13 +208,13 @@ class specials_AdminSupport extends specials_baseSpecials
                     AND (aprl.amc_product_price_rule_value=? OR aprl.amc_product_price_rule_value=? OR aprl.amc_product_price_rule_value=?  OR aprl.amc_product_price_rule_value=? )
                     ORDER BY rt.amc_product_pricing_rule_type_sort_order DESC";
 
-                    $params = array($appraisal_product_id, $check_amount, $state, $city, $county, $zipcode);
-                    echo "<br>";
-                    echo $sql;
-                    print_r($params);
-                    $this->buildJSTable($AMCProductPricingRulesDAOExt, $AMCProductPricingRulesDAOExt->Execute($sql,$params)->getRows(),array(
-                        "viewOnly"  => true
-                    ));
+                $params = array($appraisal_product_id, $check_amount, $state, $city, $county, $zipcode);
+                echo "<br>";
+                echo $sql;
+                print_r($params);
+                $this->buildJSTable($AMCProductPricingRulesDAOExt, $AMCProductPricingRulesDAOExt->Execute($sql,$params)->getRows(),array(
+                    "viewOnly"  => true
+                ));
 
 
                 $sql = '
@@ -270,7 +270,7 @@ class specials_AdminSupport extends specials_baseSpecials
 
             } else {
 
-              
+
                 $AppraisalObj = new stdClass();
                 $AppraisalObj->AMC_ID = $amc_id;
                 $AppraisalObj->PARTY_ID = $party_id;
@@ -1107,7 +1107,7 @@ class specials_AdminSupport extends specials_baseSpecials
             echo $sql;
             $ChangesLogDAO = $this->_getDAO("ChangesLogDAO");
             $this->buildJSTable($ChangesLogDAO, $ChangesLogDAO->Execute($sql,
-                                array("%{$keywords}%", "%{$keywords}"))->GetRows());
+                array("%{$keywords}%", "%{$keywords}"))->GetRows());
             if($keyword2!='') {
                 $sql = "SELECT * FROM changes_log where (new_data like ? OR old_data like ?) 
                 order by log_id DESC limit 100";
@@ -1151,9 +1151,13 @@ class specials_AdminSupport extends specials_baseSpecials
                         INNER JOIN journal_entries AS JE ON PP.partial_payment_information_id = JE.partial_payment_id
                         INNER JOIN payment_processing_result_log AS R ON R.partial_payment_id = PP.partial_payment_information_id
                         WHERE PP.appraisal_id=? AND R.status=1 
+                        ORDER BY PP.partial_payment_information_id DESC 
                         ";
                 $partials = $this->_getDAO("AppraisalsDAO")->Execute($sql,array($appraisal_id))->GetRows();
                 foreach($partials as $payment) {
+                    if($amount <=0) {
+                        continue;
+                    }
                     $charged_amount = $payment['debit_amount'];
                     $update_charged_amount = $charged_amount - $amount;
                     if($update_charged_amount < 0) {
