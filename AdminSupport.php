@@ -619,11 +619,11 @@ class specials_AdminSupport extends specials_baseSpecials
         $end_status = $this->getValue("end_status");
         $action_id = $this->getValue("action_id");
         $this->buildForm(array(
-            $this->buildInput("workflow_id","Workflow ID","select",$this->buildSelectOptionFromDAO("WorkflowsDAO")),
-            $this->buildInput("role_type_id","Role Type","select",$this->buildSelectOptionFromDAO("RoleTypesDAO", array(0=>"Everyone"))),
-            $this->buildInput("start_status","Start Status","select",$this->buildSelectOptionFromDAO("StatusTypesDAO", array(-3=>"Previous Status"))),
-            $this->buildInput("end_status","End Status","select",$this->buildSelectOptionFromDAO("StatusTypesDAO", array(-3=>"Previous Status"))),
-            $this->buildInput("action_id","Action","select",$this->buildSelectOptionFromDAO("WorkflowActionsDAO")),
+            $this->buildInput("workflow_id","Step 1: Workflow ID*","select",$this->buildSelectOptionFromDAO("WorkflowsDAO")),
+            $this->buildInput("action_id","Step 2: Action (optional)","select",$this->buildSelectOptionFromDAO("WorkflowActionsDAO")),
+            $this->buildInput("role_type_id","Role Type (optional)","select",$this->buildSelectOptionFromDAO("RoleTypesDAO", array(0=>"Everyone"))),
+            $this->buildInput("start_status","Start Status (optional)","select",$this->buildSelectOptionFromDAO("StatusTypesDAO", array(-3=>"Previous Status"))),
+            $this->buildInput("end_status","End Status (optional)","select",$this->buildSelectOptionFromDAO("StatusTypesDAO", array(-3=>"Previous Status"))),
         ));
 
         $where_data = array();
