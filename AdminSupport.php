@@ -24,6 +24,9 @@ class specials_AdminSupport extends specials_baseSpecials
             case "cronjobs":
                 $this->cronjobs();
                 break;
+            case "ucdp_linking":
+                $this->ucdp_linking();
+                break;
             case "remove_users":
                 $this->remove_user_page();
                 break;
@@ -92,6 +95,56 @@ class specials_AdminSupport extends specials_baseSpecials
                 break;
 
         }
+    }
+
+    public function ucdp_linking() {
+        $this->buildForm(array(
+            $this->buildInput("appraisal_ids","Appraisals IDs","text"),
+            $this->buildInput("document_file_identifier","Document File Identifier","text"),
+            $this->buildInput("table_name","Type","select",$this->buildSelectOption(array("ead" => "EAD", "ucdp" => "UCDP"))),
+            $this->buildInput("option","Option","select",$this->buildSelectOption(array(1 => "View Only", 2 => "Clear & Linking")))
+        ));
+        $appraisal_ids = explode(",", str_replace(' ','',$this->getValue("appraisal_ids","")));
+        $document_file_identifier = $this->getValue("document_file_identifier","");
+        $option = $this->getValue("option",1);
+        $table_name = $this->getValue("table_name");
+        if(!empty($appraisal_ids) && $document_file_identifier!="") {
+            if($option == 2) {
+                foreach($appraisal_ids as $appraisal_id) {
+                    $this->clear_ucdp_error_process($appraisal_id);
+                    $sql = "DELETE FROM {$table_name}_appraisal_mappings WHERE appraisal_id=? ";
+                    $this->query($sql,array($appraisal_id));
+                    $sql = "DELETE FROM {$table_name}_loan_number_mappings WHERE appraisal_id=? OR original_appraisal_id=? ";
+                    $this->query($sql,array($appraisal_id,$appraisal_id));
+                }
+
+                // build up table again
+                $i=0;
+                $prev = "";
+                foreach($appraisal_ids as $appraisal_id) {
+                    $i++; // start with 1
+                    $sql = "INSERT INTO {$table_name}_appraisal_mappings VALUES(?, ? , ?)";
+                    $this->query($sql,array($document_file_identifier,$appraisal_id,$i));
+                    if($prev!="") {
+                        $sql = "INSERT INTO {$table_name}_loan_number_mappings VALUES(?, ?)";
+                        $this->query($sql,array($prev,$appraisal_id));
+                    }
+                    $prev = $appraisal_id;
+                }
+            }
+            $sql = "SELECT * FROM {$table_name}_appraisal_mappings WHERE appraisal_id IN (".implode(",", $appraisal_ids).") OR document_file_identifier=? ";
+            $this->buildJSTable($this->_getDAO(ucwords($table_name)."AppraisalMappingsDAO"), $this->query($sql, $document_file_identifier)->GetRows());
+
+            $sql = "SELECT * FROM {$table_name}_loan_number_mappings WHERE appraisal_id IN (".implode(",", $appraisal_ids).") OR original_appraisal_id IN (".implode(",", $appraisal_ids).") ";
+            $this->buildJSTable($this->_getDAO(ucwords($table_name)."AppraisalMappingsDAO"), $this->query($sql)->GetRows());
+
+            $sql = "SELECT * FROM {$table_name}_gse_status WHERE document_file_identifier=? ";
+            $this->buildJSTable($this->_getDAO(ucwords($table_name)."GSEStatusDAO"), $this->query($sql, $document_file_identifier)->GetRows());
+
+            $sql = "SELECT * FROM {$table_name}_hard_stops WHERE document_file_identifier=? ";
+            $this->buildJSTable($this->_getDAO(ucwords($table_name)."HardStopsDAO"), $this->query($sql, $document_file_identifier)->GetRows());
+        }
+
     }
 
     public function generateInvoice() {
@@ -863,6 +916,26 @@ class specials_AdminSupport extends specials_baseSpecials
         }
     }
 
+    public function clear_ucdp_error_process($appraisal_id) {
+        $doc_file1 = $this->query("SELECT * FROM ead_appraisal_mappings where appraisal_id=? ",array($appraisal_id))->fetchObject()->DOCUMENT_FILE_IDENTIFIER;
+        $doc_file2 = $this->query("SELECT * FROM ucdp_appraisal_mappings where appraisal_id=? ",array($appraisal_id))->fetchObject()->DOCUMENT_FILE_IDENTIFIER;
+
+        $this->query("DELETE FROM ead_errors WHERE appraisal_id=? ",array($appraisal_id));
+        $this->query("DELETE FROM ead_processing_queue WHERE appraisal_id=? ",array($appraisal_id));
+        if(!is_null($doc_file1)) {
+            $this->query("DELETE FROM ead_hard_stops WHERE document_file_identifier=? ",array($doc_file1));
+        }
+        echo "Done EAD // {$doc_file1} {$appraisal_id} ";
+
+        $this->query("DELETE FROM ucdp_errors WHERE appraisal_id=? ",array($appraisal_id));
+        $this->query("DELETE FROM ucdp_processing_queue WHERE appraisal_id=? ",array($appraisal_id));
+        if(!is_null($doc_file2)) {
+            $this->query("DELETE FROM ucdp_hard_stops WHERE document_file_identifier=? ",array($doc_file2));
+
+        }
+        echo "Done UCDP // {$doc_file2} {$appraisal_id} ";
+    }
+
     public function clear_ucdp_error() {
         $this->buildForm(array(
             $this->buildInput("appraisal_id","Appraisal ID","text","")
@@ -870,22 +943,7 @@ class specials_AdminSupport extends specials_baseSpecials
         $appraisal_id = $this->getValue("appraisal_id","");
         if($appraisal_id!="") {
             try {
-                $doc_file1 = $this->query("SELECT * FROM ead_appraisal_mappings where appraisal_id=? ",array($appraisal_id))->fetchObject()->DOCUMENT_FILE_IDENTIFIER;
-                $doc_file2 = $this->query("SELECT * FROM ucdp_appraisal_mappings where appraisal_id=? ",array($appraisal_id))->fetchObject()->DOCUMENT_FILE_IDENTIFIER;
-
-                $this->query("DELETE FROM ead_errors WHERE appraisal_id=? ",array($appraisal_id));
-                if(!is_null($doc_file1)) {
-                    $this->query("DELETE FROM ead_hard_stops WHERE document_file_identifier=? ",array($doc_file1));
-                }
-                echo "Done EAD // {$doc_file1} {$appraisal_id} ";
-
-                $this->query("DELETE FROM ucdp_errors WHERE appraisal_id=? ",array($appraisal_id));
-
-                if(!is_null($doc_file2)) {
-                    $this->query("DELETE FROM ucdp_hard_stops WHERE document_file_identifier=? ",array($doc_file2));
-
-                }
-                echo "Done UCDP // {$doc_file2} {$appraisal_id} ";
+                $this->clear_ucdp_error_process($appraisal_id);
             } catch (Exception $e) {
                 echo "<pre>";
                 print_r($e);
@@ -1700,15 +1758,17 @@ $(function() {
           <ul class="dropdown-menu">
             <li><a href="?action=product_pricing_simulate">Product Pricing Simulate</a></li>
             <li><a href="?action=appraisal_products">Appraisal Products Fee</a></li>
-            <li><a href="?action=appraisal_refund">Refund</a></li>
-            <li><a href="?action=clear_ucdp_error">Clear UCDP Errors & HardStop</a></li>
+            <li><a href="?action=appraisal_refund">Refund</a></li>  
             <li><a href="?action=move_order_to_complete">Move Order to Complete</a></li>
             <li><a href="?action=orders_waiting_aci">Orders in Condition and Waiting ACI</a></li>
             <li><a href="?action=aci_sky_review">ACI Sky Review</a></li>              
             <li role="separator" class="divider"></li>
             <li><a href="?action=check_user_associ">Add User Related to Orders</a></li>
             <li><a href="?action=read_email">Read Email</a></li>
-           <li><a href="?action=getNotificationObject">Simulate Email Objects</a></li>    
+           <li><a href="?action=getNotificationObject">Simulate Email Objects</a></li>
+            <li role="separator" class="divider"></li>   
+            <li><a href="?action=ucdp_linking">UCDP / EAD Linking</a></li>
+            <li><a href="?action=clear_ucdp_error">Clear UCDP Errors & HardStop</a></li>
           </ul>
         </li>
               
