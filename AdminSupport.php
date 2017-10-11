@@ -24,6 +24,9 @@ class specials_AdminSupport extends specials_baseSpecials
             case "cronjobs":
                 $this->cronjobs();
                 break;
+            case "mass_create_note" :
+                $this->mass_create_note();
+                break;
             case "ucdp_linking":
                 $this->ucdp_linking();
                 break;
@@ -95,6 +98,73 @@ class specials_AdminSupport extends specials_baseSpecials
                 break;
 
         }
+    }
+
+    public function getWebServicesUser() {
+        $web_service_user_id = $this->_getDAO('UsersDAO')->GetUserId('WebServiceUser');
+        $User = new User();
+        return $User->FetchUser($web_service_user_id);
+    }
+
+    public function splitByComaOrLine($string) {
+        $string = explode(",", $string);
+        if(count($string) == 1) {
+            $string = explode("\n", $string[0]);
+        }
+        return $string;
+    }
+
+    public function mass_create_note() {
+        $this->buildForm(array(
+            $this->buildInput("appraisal_ids","Appraisals IDs","textarea"),
+            $this->buildInput("send_from","Send From","select", $this->buildSelectOption(array(
+                1 => $this->getCurrentUser()->UserName,
+                2 => $this->getWebServicesUser()->UserName
+            ))),
+            $this->buildInput("send_to","Send To","select", $this->buildSelectOptionFromDAO(array("table" => "appraisal_note_delivery_groups"), array(9999 => "AMC or Vendor"))),
+            $this->buildInput("note","Note","textarea"),
+            $this->buildInput("send_notification","Send Notification","select", $this->buildSelectOption(array(
+                0 => "No",
+                1   => "Yes"
+            )))
+        ));
+        $appraisal_ids = $this->getValue("appraisal_ids","");
+        $send_from = $this->getValue("send_from","0");
+        $send_to    = $this->getValue("send_to","0");
+        $note = $this->getValue("note","");
+        $send_notification = $this->getValue("send_notification",0) == 0 ? false : true;
+
+        if($appraisal_ids!="" && $note!="") {
+            $appraisal_ids = $this->splitByComaOrLine($appraisal_ids);
+            $user = $send_from == 1 ? $this->getCurrentUser() : $this->getWebServicesUser();
+            // group 9999
+            $noteDeliveryGroups = array($send_to);
+
+            foreach($appraisal_ids as $appraisal_id) {
+                $appraisal_id = trim($appraisal_id);
+                if($appraisal_id!="") {
+                    if($send_to==9999) {
+                        $std = new stdClass();
+                        $std->APPRAISAL_ID = $appraisal_id;
+                        $appraisalObj = $this->_getDAO("AppraisalsDAO")->get($std);
+                        if($appraisalObj->AMC_ID > 0 && !is_null($appraisalObj->AMC_ID)) {
+                            $noteDeliveryGroups = array(AppraisalNoteDeliveryGroups::AMC);
+                        } elseif($appraisalObj->APPRAISER_ID > 0 && !is_null($appraisalObj->APPRAISER_ID)) {
+                            $noteDeliveryGroups = array(AppraisalNoteDeliveryGroups::APPRAISER);
+                        } else {
+                            $noteDeliveryGroups = array(AppraisalNoteDeliveryGroups::APPRAISER, AppraisalNoteDeliveryGroups::AMC);
+                        }
+                    }
+
+                    $notes = new Notes();
+                    $notes->addNote($appraisal_id, $note, $user, $noteDeliveryGroups, false, $send_notification);
+                    echo " {$appraisal_id} ";
+                }
+
+            }
+            echo " DONE ";
+        }
+
     }
 
     public function ucdp_linking() {
@@ -1036,13 +1106,21 @@ class specials_AdminSupport extends specials_baseSpecials
     }
 
     public function buildSelectOptionFromDAO($dao_name, $extra = array()) {
-        $dao = $this->_getDAO($dao_name);
+        if(!is_array($dao_name)) {
+            $dao = $this->_getDAO($dao_name);
+        } else {
+            $dao = new stdClass();
+            $dao->table = $dao_name['table'];
+            $dao->pk = $this->getNameSortColumn($dao->table);
+        }
+
         $sort_column = $this->getNameSortColumn($dao->table);
         $order_by = $sort_column != "" ? "ORDER BY {$sort_column} ASC" : "";
         $sql = "SELECT * FROM {$dao->table} {$order_by} ";
-        $data = $dao->execute($sql)->getRows();
         $res = array();
         $tmp_pk = strtolower($dao->pk);
+        $data = $this->query($sql)->getRows();
+
         foreach($data as $row) {
             $enabled = true;
             $tmp_value = null;
@@ -1116,12 +1194,15 @@ class specials_AdminSupport extends specials_baseSpecials
     }
 
     public function buildInput($id, $label, $type, $default = "") {
-        $html = "<tr><td>{$label}:</td><td>";
+        $html = "<tr><td valign='top'>{$label}:</td><td>";
         $r = $this->getValue($id,$default);
         switch ($type) {
             case "select":
                 $default = str_replace("'{$r}'", "'{$r}' selected",$default);
                 $html .= "<select  name={$id} id={$id} >{$default}</select>";
+                break;
+            case "textarea":
+                $html .=  " <textarea name={$id} id={$id} style='height: 60px;width:500px;'  >{$r}</textarea> ";
                 break;
             case "text":
             default:
@@ -1769,6 +1850,8 @@ $(function() {
             <li role="separator" class="divider"></li>   
             <li><a href="?action=ucdp_linking">UCDP / EAD Linking</a></li>
             <li><a href="?action=clear_ucdp_error">Clear UCDP Errors & HardStop</a></li>
+         <li role="separator" class="divider"></li>   
+          <li><a href="?action=mass_create_note">Mass Create Note</a></li>
           </ul>
         </li>
               
