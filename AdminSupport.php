@@ -9,6 +9,9 @@ require_once ('classes/workflow/WorkflowActions.php');
 require_once ('classes/PDFDocument/PDFDocumentTable.php');
 require_once ('daos/extended/AMCProductPricingRulesDAO.php');
 require_once ('classes/engines/BaseEngine.php');
+require_once ('classes/MismoXML/MismoResponseParser.php');
+require_once ('modules/remote/admin/users/appraiser/ManageAppraiserUser.php');
+require_once ('classes/Notes.php');
 
 class specials_AdminSupport extends specials_baseSpecials
 {
@@ -18,17 +21,21 @@ class specials_AdminSupport extends specials_baseSpecials
     protected $title = "";
     protected $data = array();
 
-    public function buildBody() {
+    public function buildBody()
+    {
         $action = isset($_GET['action']) ? $_GET['action'] : "";
-        switch($action) {
+        switch ($action) {
             case "cronjobs":
                 $this->cronjobs();
                 break;
-            case "mass_create_note" :
-                $this->mass_create_note();
-                break;
             case "ucdp_linking":
                 $this->ucdp_linking();
+                break;
+            case "mass_create_appraisers":
+                $this->mass_create_appraisers();
+                break;
+            case "mass_create_note" :
+                $this->mass_create_note();
                 break;
             case "remove_users":
                 $this->remove_user_page();
@@ -93,25 +100,14 @@ class specials_AdminSupport extends specials_baseSpecials
             case "generateInvoice":
                 $this->generateInvoice();
                 break;
+            case "engine":
+                $this->engine();
+                break;
             default:
 
                 break;
 
         }
-    }
-
-    public function getWebServicesUser() {
-        $web_service_user_id = $this->_getDAO('UsersDAO')->GetUserId('WebServiceUser');
-        $User = new User();
-        return $User->FetchUser($web_service_user_id);
-    }
-
-    public function splitByComaOrLine($string) {
-        $string = explode(",", $string);
-        if(count($string) == 1) {
-            $string = explode("\n", $string[0]);
-        }
-        return $string;
     }
 
     public function mass_create_note() {
@@ -164,6 +160,450 @@ class specials_AdminSupport extends specials_baseSpecials
             }
             echo " DONE ";
         }
+
+    }
+
+    public function getWebServicesUser() {
+        $web_service_user_id = $this->_getDAO('UsersDAO')->GetUserId('WebServiceUser');
+        $User = new User();
+        return $User->FetchUser($web_service_user_id);
+    }
+
+    public function splitByComaOrLine($string) {
+        $string = explode(",", $string);
+        if(count($string) == 1) {
+            $string = explode("\n", $string[0]);
+        }
+        return $string;
+    }
+
+    public function _addAppraiserGEO($data) {
+        $username = $this->getValue("username","",$data);
+        echo "{$username} => ";
+        if($username!="") {
+            $user = $this->_getDAO("UsersDAO")->Execute("SELECT * FROM users where user_name=? ", array($username))->FetchObject();
+            $contact_id = $user->CONTACT_ID;
+            $r = array();
+            $geo_type = strtolower($this->getValue("type","",$data));
+            $location = $this->getValue("location","",$data);
+            if (!empty($contact_id) && $geo_type!="" && $location!="") {
+                $p1= "";
+                switch($geo_type) {
+                    case "county":
+                        $t = explode(",",$location);
+                        $county = trim(strtoupper($t[0]));
+                        $state = trim(strtoupper($t[1]));
+                        echo $contact_id." => ".$county." => $state ==>";
+                        $p1 = '{"contact_id":'.$contact_id.',"data":[{"section":"geopoints","data":{"action":"add","geo_type":"county","state":"'.$state.'","county_name":"'.$county.'"}}]}';
+
+                        break;
+                }
+                if($p1!="") {
+                    echo " {$location} ";
+                    $Appraiser = new ManageAppraiserUser();
+                    $x = $Appraiser->saveData($p1);
+                }
+
+            }
+
+        } else {
+            echo "NOT FOUND";
+        }
+        echo "<br>";
+
+    }
+
+    public function mass_create_appraisers()
+    {
+        $this->buildForm(array(
+
+            $this->buildInput("username", "Username", "text"),
+            $this->buildInput("first_name", "First Name", "text"),
+            $this->buildInput("last_name", "Last Name", "text"),
+            $this->buildInput("email", "Email", "text"),
+            $this->buildInput("company_name", "Company Name", "text"),
+            $this->buildInput("address", "Address", "text"),
+            $this->buildInput("city", "City", "text"),
+            $this->buildInput("state", "State", "text"),
+            $this->buildInput("zipcode", "Zipcode", "text"),
+            $this->buildInput("office_numer", "Office Number", "text"),
+            $this->buildInput("cell_number", "Cell Number", "text"),
+
+            // license
+            $this->buildInput("fha", "FHA (true|false)", "select", $this->buildSelectOption(array("t" => "t", "f" => "f"))),
+            $this->buildInput("license_level", "License Level", "select", $this->buildSelectOption(array(1 => "Licensed Residential", 2 => "Certified Residential", 3 => "Certified General"))),
+            $this->buildInput("license_exp", "License Exp", "text"),
+            $this->buildInput("license_state", "License State", "text"),
+            $this->buildInput("license_number", "License Number", "text"),
+            // insurance
+            $this->buildInput("insurance_carrier", "Insurance Carrier", "text"),
+            $this->buildInput("insurance_policy", "Insurance Policy", "text"),
+            $this->buildInput("insurance_exp", "Insurance Exp", "text"),
+            $this->buildInput("insurance_limit_total", "insurance_limit_total", "text"),
+            // assignment
+            $this->buildInput("monthly_maximum", "Monthly Maximum", "text"),
+            $this->buildInput("assignment_threshold", "Assignment Threshold", "text"),
+            $this->buildInput("enable_manual_assignment", "Enable Manual Assignment", "text"),
+            $this->buildInput("mass_file", "CSV Mass Appraisers Data", "file"),
+            $this->buildInput("mass_geo_file", "CSV Mass GEO Data", "file"),
+        ));
+
+        $mass_geo_file = isset($_FILES['mass_geo_file']) ? $_FILES['mass_geo_file'] : null;
+        $path = "/var/www/tandem.inhouse-solutions.com/scripts";
+        $safeGeo = $path."/_geo.csv";
+        if(file_exists($safeGeo)) {
+            $mass_geo_file['tmp_name'] = $safeGeo;
+        }
+        if (!empty($mass_geo_file) && $mass_geo_file['tmp_name']!="") {
+            $Users = array();
+            $csv = new CSVFile($mass_geo_file['tmp_name']);
+
+            echo "Starting GEO Data";
+            foreach ($csv as $user) {
+                $tmp_user = array();
+                if (!is_array($user)) {
+                    continue;
+                }
+
+                foreach ($user as $key => $value) {
+                    $key = strtolower(str_replace(' ', '_', trim($key)));
+                    if (trim($key) == "") {
+                        continue;
+                    }
+                    if (in_array($key, array("sites", "add_to_sites"))) {
+                        $key = "site";
+                    }
+                    if ($key == "email_address") {
+                        $key = "email";
+                    }
+                    if ($key == "user_name") {
+                        $key = "username";
+                    }
+                    if ($key == "party") {
+                        $key = "parties";
+                    }
+                    if ($value === "t" || strtolower($value) === "true") {
+                        $value = true;
+                    }
+                    if ($value === "f" || strtolower($value) === "false") {
+                        $value = false;
+                    }
+                    $tmp_user[$key] = $value;
+                }
+                if (!isset($tmp_user['username'])) {
+                    $tmp_user['username'] = strtolower($tmp_user['email']);
+                }
+                $Users[] = $tmp_user;
+
+            }
+            @unlink($mass_geo_file['tmp_name']);
+
+            foreach($Users as $User) {
+                if(!empty($User['username'])) {
+                    $User['username'] = strtolower($User['username']);
+                    $this->_addAppraiserGEO($User);
+                }
+            }
+            echo "DONE";
+            exit;
+        }
+
+        $file_upload = isset($_FILES['mass_file']) ? $_FILES['mass_file'] : null;
+        $Users = array();
+
+        $safeAppraiser = $path."/_appraisers.csv";
+        if(file_exists($safeAppraiser)) {
+            $file_upload['tmp_name'] = $safeAppraiser;
+        }
+
+        if (!empty($file_upload) && $file_upload['tmp_name']!="") {
+                $csv = new CSVFile($file_upload['tmp_name']);
+                foreach ($csv as $user) {
+                    $tmp_user = array();
+                    if (!is_array($user)) {
+                        continue;
+                    }
+                    foreach ($user as $key => $value) {
+                        $key = strtolower(str_replace(' ', '_', trim($key)));
+                        if (trim($key) == "") {
+                            continue;
+                        }
+                        if (in_array($key, array("sites", "add_to_sites"))) {
+                            $key = "site";
+                        }
+                        if ($key == "email_address") {
+                            $key = "email";
+                        }
+                        if ($key == "user_name") {
+                            $key = "username";
+                        }
+                        if ($key == "party") {
+                            $key = "parties";
+                        }
+                        if ($value === "t" || strtolower($value) === "true") {
+                            $value = true;
+                        }
+                        if ($value === "f" || strtolower($value) === "false") {
+                            $value = false;
+                        }
+                        $tmp_user[$key] = $value;
+                    }
+                    if (!isset($tmp_user['username'])) {
+                        $tmp_user['username'] = strtolower($tmp_user['email']);
+                    }
+                    $Users[] = $tmp_user;
+                }
+                @unlink($file_upload['tmp_name']);
+            } // end file upload
+
+
+            if(empty($Users)) {
+                $Users[] = $_REQUEST;
+            }
+
+            foreach ($Users as $user) {
+                if (!empty($user['username'])) {
+                    $user['username'] = strtolower($user['username']);
+                    $this->_updateAppraiserInfo($user);
+                }
+            }
+
+
+    }
+
+
+    public function _updateAppraiserInfo($data) {
+        $username = $this->getValue("username","",$data);
+        echo "{$username} => ";
+        if($username!="") {
+
+            $user = $this->_getDAO("UsersDAO")->Execute("SELECT * FROM users where user_name=? ",array($username))->FetchObject();
+            $r = array();
+            $r['fha'] = $this->getValue("fha","",$data);
+            $r['license_state'] = $this->getValue("license_state","",$data);
+            $r['license_level'] = $this->getValue("license_level","",$data);
+            $r['license_exp'] = $this->getValue("license_exp","",$data);
+            $r['license_number'] = $this->getValue("license_number","",$data);
+
+            $r['insurance_carrier'] = $this->getValue("insurance_carrier","",$data);
+            $r['insurance_policy'] = $this->getValue("insurance_policy","",$data);
+            $r['insurance_exp'] = $this->getValue("insurance_exp","",$data);
+            $r['insurance_limit_total'] = $this->getValue("insurance_limit_total","",$data);
+
+            $r['monthly_maximum'] = $this->getValue("monthly_maximum","",$data);
+            $r['assignment_threshold'] = $this->getValue("assignment_threshold","",$data);
+            $r['enable_manual_assignment'] = $this->getValue("enable_manual_assignment","",$data);
+
+            $r['first_name'] = $this->getValue("first_name","",$data);
+            $r['last_name'] = $this->getValue("last_name","",$data);
+            $r['contact_email'] = $this->getValue("email","",$data);
+
+            $r['company_name'] = $this->getValue("company_name","",$data);
+            $r['address'] = $this->getValue("address","",$data);
+            $r['city'] = $this->getValue("city","",$data);
+            $r['state'] = $this->getValue("state","",$data);
+            $r['zipcode'] = $this->getValue("zipcode","",$data);
+            $r['office_phone'] = $this->getValue("office_phone","",$data);
+            $r['cell_phone'] = $this->getValue("cell_phone","",$data);
+
+
+
+            if(!empty($user->USER_ID) && !empty($user->CONTACT_ID)) {
+                $contact_id = $user->CONTACT_ID;
+                $user_id = $user->USER_ID;
+
+                // $license
+                $fha = $this->getTrueAsString($this->isTrue($r['fha']));
+
+                $license_state = $r['license_state'];
+                $license_level = $r['license_level'];
+                if(!is_numeric($license_level)) {
+                    $license_level = strtolower($license_level);
+                    switch($license_level) {
+                        case "licensed residential":
+                            $license_level = 1;
+                            break;
+                        case "certified residential":
+                            $license_level = 2;
+                            break;
+                        case "certified general":
+                            $license_level = 3;
+                            break;
+                    }
+                }
+                $license_exp = $r['license_exp'];
+                if($license_exp != "") {
+                    $license_exp =  @date("Y-m-d", strtotime($license_exp));
+                }
+                $license_number = $r['license_number'];
+
+
+
+
+
+
+
+                $Appraiser = new ManageAppraiserUser();
+
+                $p1 = '{"contact_id":'.$contact_id.',
+                        "data":[
+                            {"section":"licenses",
+                                    "data":{"action":"add",
+                                                    "state":"'.$license_state.'",
+                                                    "fha_approved_flag":'.$fha.',
+                                                    "appraiser_license_types_id":"'.$license_level.'",
+                                                    "license_number":"'.$license_number.'",
+                                                    "license_issue_dt":"",
+                                                    "license_exp_dt":"'.$license_exp.'"}
+                               }                                                                         
+                            ]
+                        }';
+                $Appraiser->saveData($p1);
+
+
+                // insurance
+                $insurance_carrier = $r['insurance_carrier'];
+                $insurance_policy = $r['insurance_policy'];
+                $insurance_exp = $r['insurance_exp'];
+                $insurance_limit_total = $r['insurance_limit_total'];
+                if($insurance_exp != "" ) {
+                    $insurance_exp = @date("Y-m-d", strtotime($insurance_exp));
+                }
+
+                $p1 = '{"contact_id":'.$contact_id.',"data":[{"section":"insurance",
+                                    "data":{"insurance_carrier":"'.$insurance_carrier.'"}
+                              }]}';
+                $Appraiser->saveData($p1);
+
+                $p1 = '{"contact_id":'.$contact_id.',"data":[{"section":"insurance",
+                                    "data":{"insurance_policy":"'.$insurance_policy.'"}
+                              }]}';
+                $Appraiser->saveData($p1);
+
+                $p1 = '{"contact_id":'.$contact_id.',"data":[{"section":"insurance",
+                                    "data":{"insurance_limit_total":"'.$insurance_limit_total.'"}
+                              }]}';
+                $Appraiser->saveData($p1);
+
+                $p1 = '{"contact_id":'.$contact_id.',"data":[{"section":"insurance",
+                                    "data":{"insurance_exp_dt":"'.$insurance_exp.'"}
+                              }]}';
+                $Appraiser->saveData($p1);
+
+
+                $enable_manual_assignment = $this->getTrueAsT($r['enable_manual_assignment']);
+                $p1 = '{"contact_id":'.$contact_id.',
+                        "data":[
+                              {"section":"assignment_criteria",
+                                    "data":{"direct_assign_enabled_flag":"'.$enable_manual_assignment.'"}
+                              }                                                                     
+                            ]
+                        }';
+                $Appraiser->saveData($p1);
+
+                $monthly_maximum = $r['monthly_maximum'];
+                $p1 = '{"contact_id":'.$contact_id.',
+                        "data":[
+                              {"section":"assignment_criteria",
+                                    "data":{"monthly_max":"'.$monthly_maximum.'"}
+                              }                                                                     
+                            ]
+                        }';
+                $Appraiser->saveData($p1);
+
+
+                $assignment_threshold = $r['assignment_threshold'];
+                $p1 = '{"contact_id":'.$contact_id.',
+                        "data":[
+                              {"section":"assignment_criteria",
+                                    "data":{"assignment_threshold":"'.$assignment_threshold.'"}
+                              }                                                                     
+                            ]
+                        }';
+                $Appraiser->saveData($p1);
+
+
+                $x = array();
+                $x['company_name'] = $r['company_name'];
+                $x['address1'] = $r['address'];
+                $x['city'] = $r['city'];
+                $x['state'] = $r['state'];
+                $x['zipcode'] = $r['zipcode'];
+                $x['office_phone'] = $r['office_phone'];
+                $x['cell_phone'] = $r['cell_phone'];
+                $x['first_name'] = $r['first_name'];
+                $x['last_name'] = $r['last_name'];
+                $x['contact_email'] = $r['contact_email'];
+
+                $update = new stdClass();
+                $update->CONTACT_ID = $contact_id;
+                foreach($x as $key=>$value) {
+                    if($value!="") {
+                        $key = strtoupper($key);
+                        $update->$key = $value;
+                    }
+                }
+                $this->_getDAO("ContactsDAO")->Update($update);
+
+                echo "Done";
+            } else {
+                echo " Failed ";
+            }
+        } else {
+            echo " Not FOUND ";
+        }
+        echo "<br>";
+    }
+
+    public function getTrueAsT($k) {
+        if($this->isTrue($k)) {
+            return 't';
+        }
+        return 'f';
+    }
+
+    public function isTrue($k) {
+        $k = trim(strtolower($k));
+        if(!empty($k) && $k!="f" && $k!=="false" && $k!=false && $k!='no') {
+            return true;
+        }
+        return false;
+    }
+
+    public function getTrueAsString($k) {
+        if($this->isTrue($k)) {
+            return 'true';
+        }
+        return 'false';
+    }
+
+    public function engine() {
+        $distance = $this->calcDistance('40.5218','-88.9676',
+            '40.47467', '-88.94436');
+        echo $distance;
+        if($distance < 40 ) {
+            echo " GO TIT ";
+        }
+
+
+    }
+
+    private function calcDistance($lat1,$log1,$lat2,$log2) {
+        $r = floatval(6371); //earth�s radius (mean radius = 6,371km)
+        $rLat1 = (float) $lat1 * pi() / 180;
+        $rLat2 = (float) $lat2 * pi() /  180;
+        $rLong1 = (float) $log1 * pi() / 180;
+        $rLong2 = (float) $log2 * pi() / 180;
+        $dLat = (float) $rLat2 - $rLat1;
+        $dLong = (float) $rLong2 - $rLong1;
+        $a = (float) 0;
+        $distance = (float) 0;
+
+        // "Haversine" Formula
+        $a = pow(sin($dLat/2),2) + cos($rLat1)*cos($rLat2)*pow(sin($dLong / 2),2);
+        $distance = $r * 2 * atan(sqrt($a) / sqrt(1-$a));
+
+        return $distance * .62; // convert to miles
 
     }
 
@@ -687,10 +1127,27 @@ class specials_AdminSupport extends specials_baseSpecials
             $this->buildInput("reset_roles","Reset Roles","select", $this->buildSelectOption(array("f"=>"No","t"=>"Yes"))),
             $this->buildInput("reset_contact","Reset Contact","select", $this->buildSelectOption(array("f"=>"No","t"=>"Yes"))),
             $this->buildInput("deactivate","Deactivate","select", $this->buildSelectOption(array("f"=>"No","t"=>"Yes"))),
+            $this->buildInput("mass_users_file","Mass CSV File Users","file"),
         ));
         $username = $this->getValue("username","");
         $first_name = $this->getValue("first_name","");
         $last_name = $this->getValue("last_name","");
+
+        $file_upload = isset($_FILES['mass_users_file']) ? $_FILES['mass_users_file'] : null;
+        if(!empty($file_upload)) {
+            if(copy($file_upload['tmp_name'],$file_input)) {
+                unlink($file_upload['tmp_name']);
+                exec("php {$script}  2>&1", $output, $return_var);
+                echo "<pre>";
+                print_r($output);
+                echo "</pre>";
+            } else {
+                unlink($file_upload['tmp_name']);
+                die("CAN NOT COPY ! MAKE SURE $file_input is writeable");
+            }
+            die("DONE UPLOADED");
+        }
+
 
         if($username !="" && $first_name && $last_name) {
             $this->title = "Internal Users";
@@ -1106,21 +1563,13 @@ class specials_AdminSupport extends specials_baseSpecials
     }
 
     public function buildSelectOptionFromDAO($dao_name, $extra = array()) {
-        if(!is_array($dao_name)) {
-            $dao = $this->_getDAO($dao_name);
-        } else {
-            $dao = new stdClass();
-            $dao->table = $dao_name['table'];
-            $dao->pk = $this->getNameSortColumn($dao->table);
-        }
-
+        $dao = $this->_getDAO($dao_name);
         $sort_column = $this->getNameSortColumn($dao->table);
         $order_by = $sort_column != "" ? "ORDER BY {$sort_column} ASC" : "";
         $sql = "SELECT * FROM {$dao->table} {$order_by} ";
+        $data = $dao->execute($sql)->getRows();
         $res = array();
         $tmp_pk = strtolower($dao->pk);
-        $data = $this->query($sql)->getRows();
-
         foreach($data as $row) {
             $enabled = true;
             $tmp_value = null;
@@ -1194,15 +1643,15 @@ class specials_AdminSupport extends specials_baseSpecials
     }
 
     public function buildInput($id, $label, $type, $default = "") {
-        $html = "<tr><td valign='top'>{$label}:</td><td>";
+        $html = "<tr><td>{$label}:</td><td>";
         $r = $this->getValue($id,$default);
         switch ($type) {
             case "select":
                 $default = str_replace("'{$r}'", "'{$r}' selected",$default);
                 $html .= "<select  name={$id} id={$id} >{$default}</select>";
                 break;
-            case "textarea":
-                $html .=  " <textarea name={$id} id={$id} style='height: 60px;width:500px;'  >{$r}</textarea> ";
+            case "file" :
+                $html .=  " <input type=file name={$id} id={$id} > ";
                 break;
             case "text":
             default:
@@ -1260,7 +1709,7 @@ class specials_AdminSupport extends specials_baseSpecials
     public function buildForm($data = array(), $options = array()) {
         $action = isset($options['action']) ? $options['action'] : $_GET['action'];
         $confirm = isset($options['confirm']) ?  "confirm('Are you sure?')" : "true";
-        $html = "<form action='?action={$action}' method=post onsubmit=\"return {$confirm};\" ><table >";
+        $html = "<form action='?action={$action}' method=post enctype='multipart/form-data' onsubmit=\"return {$confirm};\" ><table >";
         foreach($data as $input) {
             $html .= "<div >
                        {$input}
@@ -1404,7 +1853,10 @@ class specials_AdminSupport extends specials_baseSpecials
         echo $table;
     }
 
-    public function getValue($name, $default = "") {
+    public function getValue($name, $default = "", $data = array()) {
+        if(!empty($data)) {
+            return isset($data[$name]) ? $data[$name] : $default;
+        }
         return isset($_POST[$name]) ? $_POST[$name] : $default;
     }
 
@@ -1850,8 +2302,11 @@ $(function() {
             <li role="separator" class="divider"></li>   
             <li><a href="?action=ucdp_linking">UCDP / EAD Linking</a></li>
             <li><a href="?action=clear_ucdp_error">Clear UCDP Errors & HardStop</a></li>
-         <li role="separator" class="divider"></li>   
+            <li role="separator" class="divider"></li>  
+            <li><a href="?action=engine">Engine Checking</a></li>
+        <li role="separator" class="divider"></li>   
           <li><a href="?action=mass_create_note">Mass Create Note</a></li>
+                      
           </ul>
         </li>
               
@@ -1866,7 +2321,8 @@ $(function() {
                 <li><a href="?action=remove_users">Deactivate Users</a></li>
                 <li><a href="?action=update_user_global">Update Users Global</a></li>            
                 <li><a href="?action=login_as_user">Login as User</a></li>                                    
-                <li><a href="?action=change_username">Change Username</a></li>                
+                <li><a href="?action=change_username">Change Username</a></li>      
+                <li><a href="?action=mass_create_appraisers">Mass Create Appraisers</a></li>                          
               </ul>
         </li>
        
@@ -2320,5 +2776,33 @@ class AdminACI extends AciSkyReviewPlugin {
         return $this->appraisal_id;
     }
 
+}
+
+class CSVFile extends SplFileObject
+{
+    private $keys;
+
+    public function __construct($file)
+    {
+        parent::__construct($file);
+        $this->setFlags(SplFileObject::READ_CSV);
+    }
+
+    public function rewind()
+    {
+        parent::rewind();
+        $this->keys = parent::current();
+        parent::next();
+    }
+
+    public function current()
+    {
+        return @array_combine($this->keys, parent::current());
+    }
+
+    public function getKeys()
+    {
+        return $this->keys;
+    }
 }
 
