@@ -1,4 +1,8 @@
 <?php
+ini_set('display_errors', 1);
+ini_set('display_startup_errors', 1);
+error_reporting(E_ALL & ~E_WARNING & ~E_NOTICE);
+
 require_once('classes/AppraisalOrderFactory.php');
 require_once('daos/DAOFactory.php');
 require_once ('pages/specials/baseSpecials.php');
@@ -11,6 +15,7 @@ require_once ('daos/extended/AMCProductPricingRulesDAO.php');
 require_once ('classes/engines/BaseEngine.php');
 require_once ('classes/MismoXML/MismoResponseParser.php');
 require_once ('modules/remote/admin/users/appraiser/ManageAppraiserUser.php');
+require_once ('modules/remote/admin/users/broker/ManageBrokerUser.php');
 require_once ('classes/Notes.php');
 
 class specials_AdminSupport extends specials_baseSpecials
@@ -201,7 +206,7 @@ class specials_AdminSupport extends specials_baseSpecials
                 if($p1!="") {
                     echo " {$location} ";
                     $Appraiser = new ManageAppraiserUser();
-                    $x = $Appraiser->saveData($p1);
+                    $x = $this->jsonResult($Appraiser->saveData($p1));
                 }
 
             }
@@ -317,56 +322,56 @@ class specials_AdminSupport extends specials_baseSpecials
         }
 
         if (!empty($file_upload) && $file_upload['tmp_name']!="") {
-                $csv = new CSVFile($file_upload['tmp_name']);
-                foreach ($csv as $user) {
-                    $tmp_user = array();
-                    if (!is_array($user)) {
+            $csv = new CSVFile($file_upload['tmp_name']);
+            foreach ($csv as $user) {
+                $tmp_user = array();
+                if (!is_array($user)) {
+                    continue;
+                }
+                foreach ($user as $key => $value) {
+                    $key = strtolower(str_replace(' ', '_', trim($key)));
+                    if (trim($key) == "") {
                         continue;
                     }
-                    foreach ($user as $key => $value) {
-                        $key = strtolower(str_replace(' ', '_', trim($key)));
-                        if (trim($key) == "") {
-                            continue;
-                        }
-                        if (in_array($key, array("sites", "add_to_sites"))) {
-                            $key = "site";
-                        }
-                        if ($key == "email_address") {
-                            $key = "email";
-                        }
-                        if ($key == "user_name") {
-                            $key = "username";
-                        }
-                        if ($key == "party") {
-                            $key = "parties";
-                        }
-                        if ($value === "t" || strtolower($value) === "true") {
-                            $value = true;
-                        }
-                        if ($value === "f" || strtolower($value) === "false") {
-                            $value = false;
-                        }
-                        $tmp_user[$key] = $value;
+                    if (in_array($key, array("sites", "add_to_sites"))) {
+                        $key = "site";
                     }
-                    if (!isset($tmp_user['username'])) {
-                        $tmp_user['username'] = strtolower($tmp_user['email']);
+                    if ($key == "email_address") {
+                        $key = "email";
                     }
-                    $Users[] = $tmp_user;
+                    if ($key == "user_name") {
+                        $key = "username";
+                    }
+                    if ($key == "party") {
+                        $key = "parties";
+                    }
+                    if ($value === "t" || strtolower($value) === "true") {
+                        $value = true;
+                    }
+                    if ($value === "f" || strtolower($value) === "false") {
+                        $value = false;
+                    }
+                    $tmp_user[$key] = $value;
                 }
-                @unlink($file_upload['tmp_name']);
-            } // end file upload
-
-
-            if(empty($Users)) {
-                $Users[] = $_REQUEST;
-            }
-
-            foreach ($Users as $user) {
-                if (!empty($user['username'])) {
-                    $user['username'] = strtolower($user['username']);
-                    $this->_updateAppraiserInfo($user);
+                if (!isset($tmp_user['username'])) {
+                    $tmp_user['username'] = strtolower($tmp_user['email']);
                 }
+                $Users[] = $tmp_user;
             }
+            @unlink($file_upload['tmp_name']);
+        } // end file upload
+
+
+        if(empty($Users)) {
+            $Users[] = $_REQUEST;
+        }
+
+        foreach ($Users as $user) {
+            if (!empty($user['username'])) {
+                $user['username'] = strtolower($user['username']);
+                $this->_updateAppraiserInfo($user);
+            }
+        }
 
 
     }
@@ -406,9 +411,10 @@ class specials_AdminSupport extends specials_baseSpecials
             $r['office_phone'] = $this->getValue("office_phone","",$data);
             $r['cell_phone'] = $this->getValue("cell_phone","",$data);
 
-
-
-            if(!empty($user->USER_ID) && !empty($user->CONTACT_ID)) {
+            $r['class'] = $this->getValue("class","", $data);
+            $r['locations'] = $this->getValue("locations","", $data);
+            echo $r['class']." => ";
+            if(!empty($user->USER_ID) && !empty($user->CONTACT_ID) && $r['class'] != "") {
                 $contact_id = $user->CONTACT_ID;
                 $user_id = $user->USER_ID;
 
@@ -442,10 +448,11 @@ class specials_AdminSupport extends specials_baseSpecials
 
 
 
+                $class = "Manage".$r['class'];
+                $Appraiser = new $class();
 
-                $Appraiser = new ManageAppraiserUser();
-
-                $p1 = '{"contact_id":'.$contact_id.',
+                if($license_number!="") {
+                    $p1 = '{"contact_id":'.$contact_id.',
                         "data":[
                             {"section":"licenses",
                                     "data":{"action":"add",
@@ -458,7 +465,9 @@ class specials_AdminSupport extends specials_baseSpecials
                                }                                                                         
                             ]
                         }';
-                $Appraiser->saveData($p1);
+                    $this->jsonResult($Appraiser->saveData($p1));
+                }
+
 
 
                 // insurance
@@ -470,57 +479,82 @@ class specials_AdminSupport extends specials_baseSpecials
                     $insurance_exp = @date("Y-m-d", strtotime($insurance_exp));
                 }
 
-                $p1 = '{"contact_id":'.$contact_id.',"data":[{"section":"insurance",
+                if($insurance_carrier!="") {
+                    $p1 = '{"contact_id":'.$contact_id.',"data":[{"section":"insurance",
                                     "data":{"insurance_carrier":"'.$insurance_carrier.'"}
                               }]}';
-                $Appraiser->saveData($p1);
+                    $this->jsonResult($Appraiser->saveData($p1));
+                }
 
-                $p1 = '{"contact_id":'.$contact_id.',"data":[{"section":"insurance",
+                if($insurance_policy!="") {
+                    $p1 = '{"contact_id":'.$contact_id.',"data":[{"section":"insurance",
                                     "data":{"insurance_policy":"'.$insurance_policy.'"}
                               }]}';
-                $Appraiser->saveData($p1);
+                    $this->jsonResult($Appraiser->saveData($p1));
+                }
 
-                $p1 = '{"contact_id":'.$contact_id.',"data":[{"section":"insurance",
+                if($insurance_limit_total!="") {
+                    $p1 = '{"contact_id":'.$contact_id.',"data":[{"section":"insurance",
                                     "data":{"insurance_limit_total":"'.$insurance_limit_total.'"}
                               }]}';
-                $Appraiser->saveData($p1);
+                    $this->jsonResult($Appraiser->saveData($p1));
+                }
 
-                $p1 = '{"contact_id":'.$contact_id.',"data":[{"section":"insurance",
+                if($insurance_exp!="") {
+                    $p1 = '{"contact_id":'.$contact_id.',"data":[{"section":"insurance",
                                     "data":{"insurance_exp_dt":"'.$insurance_exp.'"}
                               }]}';
-                $Appraiser->saveData($p1);
+                    $this->jsonResult($Appraiser->saveData($p1));
+                }
 
 
-                $enable_manual_assignment = $this->getTrueAsT($r['enable_manual_assignment']);
-                $p1 = '{"contact_id":'.$contact_id.',
+                if($r['enable_manual_assignment']!="") {
+                    $enable_manual_assignment = $this->getTrueAsT($r['enable_manual_assignment']);
+                    $p1 = '{"contact_id":'.$contact_id.',
                         "data":[
                               {"section":"assignment_criteria",
                                     "data":{"direct_assign_enabled_flag":"'.$enable_manual_assignment.'"}
                               }                                                                     
                             ]
                         }';
-                $Appraiser->saveData($p1);
+                    $this->jsonResult($Appraiser->saveData($p1));
+                }
+
 
                 $monthly_maximum = $r['monthly_maximum'];
-                $p1 = '{"contact_id":'.$contact_id.',
+                if($monthly_maximum!="") {
+                    $p1 = '{"contact_id":'.$contact_id.',
                         "data":[
                               {"section":"assignment_criteria",
                                     "data":{"monthly_max":"'.$monthly_maximum.'"}
                               }                                                                     
                             ]
                         }';
-                $Appraiser->saveData($p1);
+                    $this->jsonResult($Appraiser->saveData($p1));
+
+                }
 
 
                 $assignment_threshold = $r['assignment_threshold'];
-                $p1 = '{"contact_id":'.$contact_id.',
+                if($assignment_threshold!="") {
+                    $p1 = '{"contact_id":'.$contact_id.',
                         "data":[
                               {"section":"assignment_criteria",
                                     "data":{"assignment_threshold":"'.$assignment_threshold.'"}
                               }                                                                     
                             ]
                         }';
-                $Appraiser->saveData($p1);
+                    $this->jsonResult($Appraiser->saveData($p1));
+                }
+
+                if($r['locations']!="") {
+                    $location_ids = $this->getPartyIDsByLocation($r['locations'],"||");
+                    $selected_options = $this->arrayToJSONIDs($location_ids);
+
+                    $p1 = '{"contact_id":'.$contact_id.',"data":[{"section":"locations","data":{"selected_options":['.$selected_options.']}}]}';
+                    echo " locations:{$selected_options} ";
+                    $this->jsonResult($Appraiser->saveData($p1));
+                }
 
 
                 $x = array();
@@ -545,14 +579,67 @@ class specials_AdminSupport extends specials_baseSpecials
                 }
                 $this->_getDAO("ContactsDAO")->Update($update);
 
-                echo "Done";
+                echo " => Done";
             } else {
-                echo " Failed ";
+                echo " => Failed ";
             }
         } else {
-            echo " Not FOUND ";
+            echo " => Not FOUND ";
         }
         echo "<br>";
+    }
+
+    public function jsonResult($result) {
+        $x= false;
+        foreach($result as $key=>$section) {
+            if(isset($section['successful'])) {
+                if($section['successful']) {
+                    $x= true;
+                }
+                $x= false;
+            }
+            if($result[$key] == true) {
+                $x= true;
+            } else {
+                $x= false;
+            }
+        }
+        echo $this->getTrueAsT($x);
+        return $x;
+    }
+
+    public function arrayToJSONIDs($array, $k='"') {
+        $string = "";
+        foreach($array as $x) {
+            $string.=",{$k}{$x}{$k}";
+        }
+        return substr($string,1);
+
+
+    }
+
+    public function getPartyByName($location_name) {
+        $sql = "SELECT * FROM parties where party_name=? ";
+        $party = $this->_getDAO("PartiesDAO")->execute($sql, array($location_name))->fetchObject();
+        return $party;
+    }
+
+    /**
+     * @param $locations
+     * @param string $sep
+     * @return array
+     */
+    public function getPartyIDsByLocation($locations, $sep = "||") {
+        $locations = explode($sep, $locations);
+        $ids = array();
+        foreach($locations as $location_name) {
+            $sql = "SELECT * FROM parties where party_name=? ";
+            $party = $this->_getDAO("PartiesDAO")->execute($sql, array($location_name))->fetchObject();
+            if($party->PARTY_ID) {
+                $ids[] = $party->PARTY_ID;
+            }
+        }
+        return $ids;
     }
 
     public function getTrueAsT($k) {
@@ -1628,11 +1715,12 @@ class specials_AdminSupport extends specials_baseSpecials
                 $data_exe[] = $message_to;
             }
 
-            $sql = "SELECT A.appraisal_id, B.notification_job_id, B.job_completed_flag, B.subject, B.message_to , B.message_from, B.bounce_flag , B.bounce_reason 
+            $sql = "SELECT A.appraisal_id, B.notification_job_id, B.job_completed_flag, B.subject, B.message_to , B.message_from, B.last_attempted_timestamp, E.event_date, B.bounce_flag , B.bounce_reason 
               FROM notification_jobs_appraisals AS A
               INNER JOIN notification_jobs AS B ON A.notification_job_id = B.notification_job_id
+              INNER JOIN events as E ON B.event_id = E.event_id
               WHERE A.appraisal_id IS NOT NULL {$where_string}
-              GROUP BY A.appraisal_id, B.notification_job_id, B.job_completed_flag, B.subject, B.message_to , B.message_from, B.bounce_flag , B.bounce_reason
+              GROUP BY A.appraisal_id, B.notification_job_id, B.job_completed_flag, B.subject, B.message_to , B.message_from, B.bounce_flag , B.bounce_reason,  B.last_attempted_timestamp, E.event_date
               ORDER BY B.notification_job_id DESC 
               LIMIT 500
               ";
