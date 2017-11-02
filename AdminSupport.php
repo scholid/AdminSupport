@@ -113,6 +113,39 @@ class specials_AdminSupport extends specials_baseSpecials
                 break;
 
         }
+        $sql = "SELECT * FROM users where user_id=100 ";
+
+    }
+
+    var $connections = array();
+    public function sqlSchema($schema , $sql) {
+        $DirectoryHandle = opendir('/var/www/conf/tandem/');
+        $this->connections = array();
+        $k = 0;
+        if(empty($this->connections)) {
+            while ($FileName = readdir($DirectoryHandle)) {
+                if (preg_match('/\.ini$/i', $FileName)) {
+                    if (strlen($FileName) < 10) {
+                        continue;
+                    } else {
+                        $OPTIONS = parse_ini_file("/var/www/conf/tandem/$FileName", true);
+                        $ConnectionObj->HOST = $OPTIONS['PG_SQL']['HOST'];
+                        $ConnectionObj->USER = $OPTIONS['PG_SQL']['USER'];
+                        $ConnectionObj->PASSWORD = $OPTIONS['PG_SQL']['PASSWORD'];
+                        $ConnectionObj->DBNAME = $OPTIONS['PG_SQL']['DBNAME'];
+                        $ConnectionObj->OPTIONS = $OPTIONS;
+                        $this->connections[$k]['connection'] = $ConnectionObj;
+                        $this->connections[$k]['options'] = $OPTIONS;
+                        unset($ConnectionObj);
+                        $OPTIONS = array();
+                        $k++;
+                    }
+
+                }
+            }
+        }
+
+
     }
 
     public function mass_create_note() {
@@ -217,6 +250,51 @@ class specials_AdminSupport extends specials_baseSpecials
         echo "<br>";
 
     }
+
+    public function CSVToArray($csv_file, $delete = true) {
+        $csv = new CSVFile($csv_file);
+        $res = array();
+        foreach ($csv as $row) {
+            $tmp_user = array();
+            if (!is_array($row)) {
+                continue;
+            }
+
+            foreach ($row as $key => $value) {
+                $key = strtolower(str_replace(' ', '_', trim($key)));
+                if (trim($key) == "") {
+                    continue;
+                }
+                if (in_array($key, array("sites", "add_to_sites"))) {
+                    $key = "site";
+                }
+                if ($key == "email_address") {
+                    $key = "email";
+                }
+                if ($key == "user_name") {
+                    $key = "username";
+                }
+                if ($key == "party") {
+                    $key = "parties";
+                }
+                if ($value === "t" || strtolower($value) === "true") {
+                    $value = true;
+                }
+                if ($value === "f" || strtolower($value) === "false") {
+                    $value = false;
+                }
+                $tmp_user[$key] = $value;
+            }
+            if (!isset($tmp_user['username'])) {
+                $tmp_user['username'] = strtolower($tmp_user['email']);
+            }
+            $res[] = $tmp_user;
+
+        }
+        @unlink($csv_file);
+        return $res;
+    }
+
 
     public function mass_create_appraisers()
     {
@@ -1374,6 +1452,7 @@ class specials_AdminSupport extends specials_baseSpecials
         $this->buildForm(array(
             $this->buildInput("username","Current Username","text"),
             $this->buildInput("new_username","Change to new Username","text"),
+            $this->buildInput("file_upload","File Upload","file"),
             $this->buildInput("options","Extra options", "select",$this->buildSelectOption(array(
                 "check" => "Check Information Only",
                 "change"    => "Change Username",
@@ -1383,41 +1462,61 @@ class specials_AdminSupport extends specials_baseSpecials
             "confirm"   => true
         ));
 
-        if($username!="" || $new_username !="") {
-            $UsersDAO = $this->_getDAO("UsersDAO");
-            $current_user_data = $UsersDAO->Execute("SELECT * FROM users where user_name=? ", array($username))->getRows();
-            $this->buildJSTable($UsersDAO, $current_user_data);
-            $current_user = isset($current_user_data[0]) ? $current_user_data[0] : array();
+        $mass_upload = $_FILES['file_upload'];
+        $mass = false;
+        if($mass_upload['tmp_name']!="") {
+            $data = $this->CSVToArray($mass_upload['tmp_name']);
+            $mass = true;
+        } else {
+            $data = array(
+                0 => array(
+                    "username"  => $username,
+                    "new_username"  => $new_username
+                )
+            );
+        }
+        foreach($data as $row) {
+            $username = $row['username'];
+            $new_username = $row['new_username'];
+            echo $username." => ".$new_username." <br>";
+            if($username!="" || $new_username !="") {
+                $UsersDAO = $this->_getDAO("UsersDAO");
+                $current_user_data = $UsersDAO->Execute("SELECT * FROM users where user_name=? ", array($username))->getRows();
+                if(!$mass)  $this->buildJSTable($UsersDAO, $current_user_data);
+                $current_user = isset($current_user_data[0]) ? $current_user_data[0] : array();
 
-            $new_user_data = $UsersDAO->Execute("SELECT * FROM users where user_name=? ", array($new_username))->getRows();
-            $this->buildJSTable($UsersDAO, $new_user_data);
-            $new_user = isset($new_user_data[0]) ? $new_user_data[0] : array();
+                $new_user_data = $UsersDAO->Execute("SELECT * FROM users where user_name=? ", array($new_username))->getRows();
+                if(!$mass)  $this->buildJSTable($UsersDAO, $new_user_data);
+                $new_user = isset($new_user_data[0]) ? $new_user_data[0] : array();
 
-            if($options == "check" ) {
-                $this->h4("Check Orders {$username}");
-                $orders = $this->query("select appraisal_id, appraiser_id, requested_by from appraisals where requested_by=? OR appraiser_id=? ", array($current_user['user_id'], $current_user['contact_id']))->getRows();
+                if($options == "check" ) {
+                    if(!$mass)  $this->h4("Check Orders {$username}");
+                    $orders = $this->query("select appraisal_id, appraiser_id, requested_by from appraisals where requested_by=? OR appraiser_id=? ", array($current_user['user_id'], $current_user['contact_id']))->getRows();
 
-                $this->buildJSTable($this->_getDAO("AppraisalsDAO"),
-                    $orders
-                );
-            }
-
-            if($options == "change") {
-                echo " Updated Users table <br>";
-                $this->query("UPDATE users SET user_name=? WHERE user_name=? ", array($new_username, $username));
-                $this->query("UPDATE commondata.global_users SET user_name=? WHERE user_name=? ", array($new_username, $username));
-                echo " UPDATE GLOBAL Users";
-            }
-
-            if($options == "move" && !empty($new_user) && !empty($current_user)) {
-                echo "Move Orders from {$current_user['user_id']} to {$new_user['user_id']}";
-                $this->query("UPDATE appraisals set requested_by=? WHERE requested_by=? ", array($new_user['user_id'],$current_user['user_id']));
-                if(!empty($new_user['contact_id']) && !empty($current_user['contact_id'])) {
-                    $this->query("UPDATE appraisals set appraiser_id=? WHERE appraiser_id=? ", array($new_user['contact_id'],$current_user['contact_id']));
+                    if(!$mass) $this->buildJSTable($this->_getDAO("AppraisalsDAO"),
+                        $orders
+                    );
                 }
+
+                if($options == "change") {
+                    echo " Updated Users table <br>";
+                    $this->query("UPDATE users SET user_name=? WHERE user_name=? ", array($new_username, $username));
+                    $this->query("UPDATE commondata.global_users SET user_name=? WHERE user_name=? ", array($new_username, $username));
+                    echo " UPDATE GLOBAL Users";
+                }
+
+                if($options == "move" && !empty($new_user) && !empty($current_user)) {
+                    echo "Move Orders from {$current_user['user_id']} to {$new_user['user_id']}";
+                    $this->query("UPDATE appraisals set requested_by=? WHERE requested_by=? ", array($new_user['user_id'],$current_user['user_id']));
+                    if(!empty($new_user['contact_id']) && !empty($current_user['contact_id'])) {
+                        $this->query("UPDATE appraisals set appraiser_id=? WHERE appraiser_id=? ", array($new_user['contact_id'],$current_user['contact_id']));
+                    }
+                }
+
             }
 
         }
+
 
 
     }
@@ -1740,6 +1839,9 @@ class specials_AdminSupport extends specials_baseSpecials
                 break;
             case "file" :
                 $html .=  " <input type=file name={$id} id={$id} > ";
+                break;
+            case "textarea":
+                $html .=  " <textarea style='width: 700px;height:300px;' name={$id} id={$id} >{$default}</textarea> ";
                 break;
             case "text":
             default:
