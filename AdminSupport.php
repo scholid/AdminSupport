@@ -36,6 +36,9 @@ class specials_AdminSupport extends specials_baseSpecials
             case "ucdp_linking":
                 $this->ucdp_linking();
                 break;
+            case "enable_products":
+                $this->enable_products();
+                break;
             case "mass_create_appraisers":
                 $this->mass_create_appraisers();
                 break;
@@ -114,6 +117,71 @@ class specials_AdminSupport extends specials_baseSpecials
 
         }
         $sql = "SELECT * FROM users where user_id=100 ";
+
+    }
+
+    public function enable_products() {
+        $this->buildForm(array(
+            $this->buildInput("appraisal_product_id","Appraisal Product ID","text"),
+            $this->buildInput("loan_ids","Enable for Loan Type IDs (,)","text"),
+            $this->buildInput("property_type_ids","Enable for Property Type IDs (,)","text"),
+            $this->buildInput("occupancy_ids","Enable for Occupancy IDs (,)","text"),
+        ));
+
+        $appraisal_product_id = $this->getValue("appraisal_product_id","");
+        $loan_ids = $this->getValue("loan_ids","");
+        $property_type_ids = $this->getValue("property_type_ids","");
+        $occupancy_ids = $this->getValue("occupancy_ids","");
+
+        if($appraisal_product_id!="") {
+            if($loan_ids!="") {
+                // appraisal_products_loan_type_mapping
+                $loan = explode(",",$loan_ids);
+                foreach($loan as $loan_type_id) {
+                    $loan_type_id = (Int)trim($loan_type_id);
+                    try {
+                        $sql = "INSERT INTO appraisal_products_loan_type_mapping (appraisal_product_id, loan_type_id, enabled_flag) VALUES($appraisal_product_id,$loan_type_id, true)";
+                        $this->Execute($sql);
+                        echo " LOAN {$loan_type_id} <br>";
+                    } catch (Exception $e) {
+                        echo $sql."; <br>";
+                    }
+                }
+            } // end loan
+            if($property_type_ids!="") {
+                $list = explode(",",$property_type_ids);
+                foreach($list as $id) {
+                    $id = (Int)trim($id);
+                    try {
+                        $sql = "INSERT INTO appraisal_products_property_type_mapping (appraisal_product_id, property_type_id, enabled_flag) VALUES($appraisal_product_id,$id, true)";
+                        $this->Execute($sql);
+                        echo " Property {$id} <br>";
+                    } catch (Exception $e) {
+                        echo $sql.";<br>";
+                    }
+                }
+            } // end property
+            if($occupancy_ids!="") {
+                $list = explode(",",$occupancy_ids);
+                foreach($list as $id) {
+                    $id = (Int)trim($id);
+                    if($property_type_ids!="") {
+                        $list2 = explode(",",$property_type_ids);
+                        foreach($list2 as $id2) {
+                            $id2 = (Int)trim($id2);
+                            try {
+                                $sql = "INSERT INTO appraisal_products_property_occupancy_type_mapping (appraisal_product_id, property_type_id, occupancy_type_id, enabled_flag) VALUES($appraisal_product_id,$id2,$id, true)";
+                                $this->Execute($sql);
+                                echo " Occu {$id}/{$id2} <br> ";
+                            } catch (Exception $e) {
+                                echo $sql."; <br>";
+                            }
+                        }
+                    } // end property
+                }
+            }
+            echo "DONE";
+        }
 
     }
 
@@ -495,6 +563,16 @@ class specials_AdminSupport extends specials_baseSpecials
             if(!empty($user->USER_ID) && !empty($user->CONTACT_ID) && $r['class'] != "") {
                 $contact_id = $user->CONTACT_ID;
                 $user_id = $user->USER_ID;
+                if($r['class'] == "AppraiserUser") {
+                    // check Appraiser Info
+                    $info = new stdClass();
+                    $info->CONTACT_ID = $contact_id;
+                    $line = $this->_getDAO("AppraiserInfoDAO")->get($info);
+                    if(!$line->CONTACT_ID) {
+                        // sert
+                        $this->_getDAO("AppraiserInfoDAO")->Create($info);
+                    }
+                }
 
                 // $license
                 $fha = $this->getTrueAsString($this->isTrue($r['fha']));
@@ -670,6 +748,7 @@ class specials_AdminSupport extends specials_baseSpecials
     public function jsonResult($result) {
         $x= false;
         foreach($result as $key=>$section) {
+            echo " {$key}=";
             if(isset($section['successful'])) {
                 if($section['successful']) {
                     $x= true;
@@ -2522,6 +2601,7 @@ $(function() {
             <li><a href="?action=change_location_parent">Change Location Parents</a></li>
             <li><a href="?action=changes_log">Search Changes Log</a></li>
             <li role="separator" class="divider"></li>
+            <li><a href="?action=enable_products">Enable Products</a></li>
             <li><a href="?action=generateInvoice">Mass Gen Invoices</a></li>
                           
           </ul>
