@@ -1378,7 +1378,8 @@ class specials_AdminSupport extends specials_baseSpecials
         $last_name = $this->getValue("last_name","");
 
         $file_upload = isset($_FILES['mass_users_file']) ? $_FILES['mass_users_file'] : null;
-        if(!empty($file_upload)) {
+        if(!empty($file_upload) && trim($file_upload['tmp_name'])!=="") {
+            echo "COPY ".$file_upload['tmp_name']." <br>";
             if(copy($file_upload['tmp_name'],$file_input)) {
                 unlink($file_upload['tmp_name']);
                 exec("php {$script}  2>&1", $output, $return_var);
