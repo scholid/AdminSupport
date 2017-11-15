@@ -17,6 +17,7 @@ require_once ('classes/MismoXML/MismoResponseParser.php');
 require_once ('modules/remote/admin/users/appraiser/ManageAppraiserUser.php');
 require_once ('modules/remote/admin/users/broker/ManageBrokerUser.php');
 require_once ('classes/Notes.php');
+require_once('modules/remote/admin/locations/ManageInternalLocationVendorPanels.php');
 
 class specials_AdminSupport extends specials_baseSpecials
 {
@@ -367,34 +368,6 @@ class specials_AdminSupport extends specials_baseSpecials
     public function mass_create_appraisers()
     {
         $this->buildForm(array(
-
-            $this->buildInput("username", "Username", "text"),
-            $this->buildInput("first_name", "First Name", "text"),
-            $this->buildInput("last_name", "Last Name", "text"),
-            $this->buildInput("email", "Email", "text"),
-            $this->buildInput("company_name", "Company Name", "text"),
-            $this->buildInput("address", "Address", "text"),
-            $this->buildInput("city", "City", "text"),
-            $this->buildInput("state", "State", "text"),
-            $this->buildInput("zipcode", "Zipcode", "text"),
-            $this->buildInput("office_numer", "Office Number", "text"),
-            $this->buildInput("cell_number", "Cell Number", "text"),
-
-            // license
-            $this->buildInput("fha", "FHA (true|false)", "select", $this->buildSelectOption(array("t" => "t", "f" => "f"))),
-            $this->buildInput("license_level", "License Level", "select", $this->buildSelectOption(array(1 => "Licensed Residential", 2 => "Certified Residential", 3 => "Certified General"))),
-            $this->buildInput("license_exp", "License Exp", "text"),
-            $this->buildInput("license_state", "License State", "text"),
-            $this->buildInput("license_number", "License Number", "text"),
-            // insurance
-            $this->buildInput("insurance_carrier", "Insurance Carrier", "text"),
-            $this->buildInput("insurance_policy", "Insurance Policy", "text"),
-            $this->buildInput("insurance_exp", "Insurance Exp", "text"),
-            $this->buildInput("insurance_limit_total", "insurance_limit_total", "text"),
-            // assignment
-            $this->buildInput("monthly_maximum", "Monthly Maximum", "text"),
-            $this->buildInput("assignment_threshold", "Assignment Threshold", "text"),
-            $this->buildInput("enable_manual_assignment", "Enable Manual Assignment", "text"),
             $this->buildInput("mass_file", "CSV Mass Appraisers Data", "file"),
             $this->buildInput("mass_geo_file", "CSV Mass GEO Data", "file"),
         ));
@@ -559,9 +532,14 @@ class specials_AdminSupport extends specials_baseSpecials
 
             $r['class'] = $this->getValue("class","", $data);
             $r['locations'] = $this->getValue("locations","", $data);
-            echo $r['class']." => ";
+            if($r['class'] == "") {
+                echo " NO CLASS ";
+            } else {
+                echo $r['class']." => ";
+            }
             if(!empty($user->USER_ID) && !empty($user->CONTACT_ID) && $r['class'] != "") {
                 $contact_id = $user->CONTACT_ID;
+                echo $contact_id." => ";
                 $user_id = $user->USER_ID;
                 if($r['class'] == "AppraiserUser") {
                     // check Appraiser Info
@@ -622,6 +600,49 @@ class specials_AdminSupport extends specials_baseSpecials
                             ]
                         }';
                     $this->jsonResult($Appraiser->saveData($p1));
+                }
+
+                $timezone = trim($this->getValue(array("time_zone", "timezone"),"", $data));
+
+                if($timezone!="") {
+                    $timezone_x = $timezone;
+                    if(!is_numeric($timezone)) {
+                        $time_list = array(
+                            "ALASKA STANDARD TIME" => -9,
+                            "PACIFIC STANDARD TIME" => -8,
+                            "MOUNTAIN STANDARD TIME" => -7,
+                            "CENTRAL STANDARD TIME" => -6,
+                            "EASTERN STANDARD TIME" => -5,
+                        );
+                        $timezone_x = isset($time_list[strtoupper($timezone)]) ? $time_list[strtoupper($timezone)] : null;
+                    }
+                    echo "Timezone {$timezone_x}=";
+                    if(!is_null($timezone_x)) {
+                        $contact_obj = new stdClass();
+                        $contact_obj->CONTACT_ID = $contact_id;
+                        $contact_obj->CONTACT_TIMEZONE = $timezone_x;
+                        $this->_getDAO("ContactsDAO")->Update($contact_obj);
+                        echo "T ";
+                    } else {
+                        echo "F ";
+                    }
+
+                }
+
+                $panel_assigned = $this->getValue("panel_assigned","",$data);
+                $panel_weight = $this->getValue("panel_weight","0",$data);
+                $panel_location = $this->getValue("panel_location","",$data);
+                $panal_preferred = $this->getValue("panel_preferred","f",$data);
+                if($panel_assigned!="" && $panel_location!="") {
+                    $panel_assigned = $this->getTrueAsT($panel_assigned);
+                    $location_ids = $this->getPartyIDsByLocation($panel_location);
+
+                    $InternalLocationVendorPanels = new ManageInternalLocationVendorPanels();
+                    foreach($location_ids as $location_id) {
+                        $p1 = '{"party_id":'.$location_id.',"data":[{"section":"location_appraisers","data":{"weight":"'.$panel_weight.'","preferred":"'.$panal_preferred.'","contact_id":"'.$contact_id.'","assigned":"'.$panel_assigned.'"}}]}';
+                        echo " Assign {$location_id} ";
+                        $this->jsonResult($InternalLocationVendorPanels->saveData($p1));
+                    }
                 }
 
 
@@ -790,13 +811,21 @@ class specials_AdminSupport extends specials_baseSpecials
         $locations = explode($sep, $locations);
         $ids = array();
         foreach($locations as $location_name) {
-            $sql = "SELECT * FROM parties where party_name=? ";
-            $party = $this->_getDAO("PartiesDAO")->execute($sql, array($location_name))->fetchObject();
-            if($party->PARTY_ID) {
-                $ids[] = $party->PARTY_ID;
+            $id = $this->getPartyIdByLocation($location_name);
+            if(!empty($id)) {
+                $ids[] = $id;
             }
         }
         return $ids;
+    }
+
+    public function getPartyIdByLocation($location_name) {
+        $sql = "SELECT * FROM parties where party_name=? ";
+        $party = $this->_getDAO("PartiesDAO")->execute($sql, array($location_name))->fetchObject();
+        if($party->PARTY_ID) {
+            return $party->PARTY_ID;
+        }
+        return null;
     }
 
     public function getTrueAsT($k) {
@@ -865,7 +894,7 @@ class specials_AdminSupport extends specials_baseSpecials
         if(!empty($appraisal_ids) && $document_file_identifier!="") {
             if($option == 2) {
                 foreach($appraisal_ids as $appraisal_id) {
-                    $this->clear_ucdp_error_process($appraisal_id);
+                    // $this->clear_ucdp_error_process($appraisal_id);
                     $sql = "DELETE FROM {$table_name}_appraisal_mappings WHERE appraisal_id=? ";
                     $this->query($sql,array($appraisal_id));
                     $sql = "DELETE FROM {$table_name}_loan_number_mappings WHERE appraisal_id=? OR original_appraisal_id=? ";
@@ -1939,11 +1968,13 @@ class specials_AdminSupport extends specials_baseSpecials
         $this->buildForm(array(
             $this->buildInput("keywords","Keywords",""),
             $this->buildInput("config_key_short_name","OR Config Key Short Name",""),
-            $this->buildInput("config_key_name","OR Config Key Name","")
+            $this->buildInput("config_key_name","OR Config Key Name",""),
+	        $this->buildInput("func","OR Select View","select", $this->buildSelectOption(array("---","Recent Config Changes","Recent Users Changes")))
         ));
         $keywords = $this->getValue("keywords","");
         $config_key_sort_name = $this->getValue("config_key_short_name","");
         $config_key_name = $this->getValue("config_key_name","");
+        $func = $this->getValue("func",0);
         $keyword2 = "";
         // config information
         if($config_key_sort_name!="" || $config_key_name!="") {
@@ -1959,19 +1990,27 @@ class specials_AdminSupport extends specials_baseSpecials
             $keyword2 = 'CONFIG_KEY_ID":'.$config_key_id;
 
         }
+
+	    if($func == 1) {
+        	$keywords = "CONFIG_KEY_ID";
+	    }
+	    if($func == 2) {
+		    $keywords = "CONTACT_ID";
+	    }
+
         if($keywords!="") {
             $sql = "SELECT * FROM changes_log where (new_data like ? OR old_data like ?) 
             order by log_id DESC limit 100";
             echo $sql;
             $ChangesLogDAO = $this->_getDAO("ChangesLogDAO");
             $this->buildJSTable($ChangesLogDAO, $ChangesLogDAO->Execute($sql,
-                array("%{$keywords}%", "%{$keywords}"))->GetRows());
+                array("%{$keywords}%", "%{$keywords}"))->GetRows(), array("translate_log" => true));
             if($keyword2!='') {
                 $sql = "SELECT * FROM changes_log where (new_data like ? OR old_data like ?) 
                 order by log_id DESC limit 100";
                 $ChangesLogDAO = $this->_getDAO("ChangesLogDAO");
                 $this->buildJSTable($ChangesLogDAO, $ChangesLogDAO->Execute($sql,
-                    array("%{$keyword2}%", "%{$keyword2}"))->GetRows());
+                    array("%{$keyword2}%", "%{$keyword2}"))->GetRows(), array("translate_log" => true));
             }
         }
     }
@@ -2050,16 +2089,26 @@ class specials_AdminSupport extends specials_baseSpecials
         $ids = 0;
         $special_update = "";
         $cols=array();
+
         foreach ($data as $row) {
             $tmp++;
             $color = $tmp % 2 == 0 ? "green" : "pink";
             $tbody .= "<tr class='bh_{$color}'>";
             $row_id = "";
+            $c=0;
             foreach($row as $col=>$value) {
+	            $c++;
                 if($tmp == 1) {
+	                if($c == 3) {
+		                if(isset($options['translate_log'])) {
+			                $header .= "<th> Extra Log </th>";
+		                }
+	                }
+
                     $header .= "<th data-name='{$col}'>{$col}</th>";
                 }
                 $ids++;
+
                 $edit = $col!=$primary_key ? true : false;
                 if($col == $primary_key) {
                     $row_id = $value;
@@ -2076,6 +2125,24 @@ class specials_AdminSupport extends specials_baseSpecials
                 $special_id = $table.$primary_key.$row_id.$col;
                 if(!in_array($col,$cols)) {
                     $cols[] = $col;
+                }
+
+                if($c == 3) {
+                    // addon
+	                if(isset($options['translate_log'])) {
+	                	$info = $row['new_data'];
+		                $log_result = "";
+		                preg_match("/CONFIG_KEY_ID\":([0-9\"]+)/",$info,$mm);
+		                if(isset($mm[1])) {
+			                $config_key_id = preg_replace("/[^0-9]+/","",$mm[1]);
+			                $search_obj = new stdClass();
+			                $search_obj->CONFIG_KEY_ID = $config_key_id;
+			                $config_obj = $this->_getDAO("ConfigKeysDAO")->Get($search_obj);
+			                $log_result .= $config_obj->CONFIG_KEY_NAME;
+		                }
+
+	                	$tbody .= "<td> $log_result </td>";
+	                }
                 }
 
                 $tbody .= "<td data-primary-value='{$row_id}' data-table='{$table}' data-primary-key='{$primary_key}' data-name='{$col}' style='{$width}'>                                
@@ -2124,10 +2191,26 @@ class specials_AdminSupport extends specials_baseSpecials
     }
 
     public function getValue($name, $default = "", $data = array()) {
-        if(!empty($data)) {
-            return isset($data[$name]) ? $data[$name] : $default;
+        if(!is_array($name)) {
+            $name_list = array($name);
+        } else {
+            $name_list = $name;
         }
-        return isset($_POST[$name]) ? $_POST[$name] : $default;
+        $found = null;
+        foreach($name_list as $name) {
+            if(!empty($data) && isset($data[$name])) {
+                $found =  $data[$name];
+            }
+            elseif(isset($_POST[$name])) {
+                $found = $_POST[$name];
+            }
+        }
+
+        if(is_null($found)) {
+            $found = $default;
+        }
+        return $found;
+
     }
 
     public function aci_sky_review() {
