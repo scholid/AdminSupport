@@ -1,6 +1,8 @@
 <?php
 ini_set('display_errors', 1);
 ini_set('display_startup_errors', 1);
+ini_set('max_execution_time', 600);
+set_time_limit(600);
 error_reporting(E_ALL & ~E_WARNING & ~E_NOTICE);
 
 require_once('classes/AppraisalOrderFactory.php');
@@ -40,6 +42,9 @@ class specials_AdminSupport extends specials_baseSpecials
             case "enable_products":
                 $this->enable_products();
                 break;
+	        case "mass_sending_email":
+	        	$this->mass_sending_email();
+	        	break;
             case "mass_create_appraisers":
                 $this->mass_create_appraisers();
                 break;
@@ -119,6 +124,69 @@ class specials_AdminSupport extends specials_baseSpecials
         }
         $sql = "SELECT * FROM users where user_id=100 ";
 
+    }
+
+    public function mass_sending_email() {
+    	$username_list = $this->getValue("username_list","");
+    	$appraisal_id = $this->getValue("appraisal_id","");
+    	$subject = $this->getValue("subject","");
+	    $send_from = $this->getValue("send_from","");
+	    $email_body = $this->getValue("email_body","");
+
+    	$this->buildForm(array(
+    		$this->buildInput("username_list","Username List(,)","textarea",$username_list),
+		    $this->buildInput("appraisal_id","Appraisal ID","text",$appraisal_id),
+		    $this->buildInput("subject", "Subject","text",$subject),
+		    $this->buildInput("send_from", "Send From","text", $send_from),
+			$this->buildInput("email_body", "Email Body","textarea", $email_body)
+	    ));
+
+    	if($username_list!="" && $subject!="" && $email_body!="" && $send_from!="") {
+    		$username_list = explode("\n",$username_list);
+
+    		foreach($username_list as $k=>$username) {
+    			$username =  trim(strtolower($username));
+			    $user = $this->_getDAO("UsersDAO")->Execute("SELECT * FROM users as U 
+										INNER JOIN contacts as C ON U.contact_id=C.contact_id 
+										where U.user_name=? ",array($username))->FetchObject();
+			    if(!empty($user->CONTACT_ID)) {
+				    $contact_id = $user->CONTACT_ID;
+				    $email = $user->CONTACT_EMAIL;
+				    $this->print_out($username." - ".$contact_id ." - ".$email);
+				    $email_body = str_replace(array(
+				    	"[[user_name]]",
+					    "[[first_name]]",
+					    "[[last_name]]"
+				    ), array(
+				    	$username,
+					    $user->FIRST_NAME,
+					    $user->LAST_NAME
+				    ), $email_body);
+
+				    if($k == 0) {
+				    	echo $email_body;
+				    }
+
+					$email_obj = new stdClass();
+				    $email_obj->JOB_COMPLETED_FLAG = "null";
+				    $email_obj->SUBJECT = $subject;
+				    $email_obj->BODY = $email_body;
+				    $email_obj->REPLY_TO = $send_from;
+				    $email_obj->MESSAGE_FROM = $send_from;
+				    $email_obj->MESSAGE_TO = $email;
+				    if($appraisal_id!="") {
+				    	$email_obj->APPRAISAL_ID = (Int)$appraisal_id;
+				    }
+
+				    $this->_getDAO("NotificationJobsDAO")->Create($email_obj);
+
+
+				    echo "<hr>";
+			    } else {
+			    	echo " CAN NOT FIND ID FOR {$username} <br>";
+			    }
+		    }
+	    }
     }
 
     public function enable_products() {
@@ -1401,6 +1469,7 @@ class specials_AdminSupport extends specials_baseSpecials
             $this->buildInput("reset_contact","Reset Contact","select", $this->buildSelectOption(array("f"=>"No","t"=>"Yes"))),
             $this->buildInput("deactivate","Deactivate","select", $this->buildSelectOption(array("f"=>"No","t"=>"Yes"))),
             $this->buildInput("mass_users_file","Mass CSV File Users","file"),
+	        $this->buildInput("mass_change_password","Mass CSV File Change Password","file"),
         ));
         $username = $this->getValue("username","");
         $first_name = $this->getValue("first_name","");
@@ -1421,6 +1490,19 @@ class specials_AdminSupport extends specials_baseSpecials
             }
             die("DONE UPLOADED");
         }
+
+	    $mass_change_password = isset($_FILES['mass_change_password']) ? $_FILES['mass_change_password'] : null;
+	    if(!empty($mass_change_password) && trim($mass_change_password['tmp_name'])!=="") {
+		    $data = $this->CSVToArray($mass_change_password['tmp_name']);
+		    foreach($data as $row) {
+			    $username = $row['username'];
+			    $password = $row['password'];
+			    $this->print_out($username." ".$password);
+			    $ID = $this->_getDAO("GlobalUsersDAO")->GetUserId($username);
+			    $this->_getDAO("GlobalUsersDAO")->UpdatePassword($ID,$password);
+		    }
+		    die("DONE UPLOADED");
+	    }
 
 
         if($username !="" && $first_name && $last_name) {
@@ -1465,6 +1547,8 @@ class specials_AdminSupport extends specials_baseSpecials
         $this->quick_view(true, true);
 
     }
+
+
 
     public function workflows() {
         $workflow_id = $this->getValue("workflow_id");
@@ -2672,10 +2756,12 @@ $(function() {
         <li class="dropdown"><a href="#"  class="dropdown-toggle" data-toggle="dropdown" role="button" aria-haspopup="true" aria-expanded="false">User Account <span class="caret"></span></a>
                <ul class="dropdown-menu">
                 <li><a href="?action=remove_users">Deactivate Users</a></li>
-                <li><a href="?action=update_user_global">Update Users Global</a></li>            
-                <li><a href="?action=login_as_user">Login as User</a></li>                                    
+                <li><a href="?action=update_user_global">Update Users Global</a></li>                                                        
                 <li><a href="?action=change_username">Change Username</a></li>      
-                <li><a href="?action=mass_create_appraisers">Mass Create Appraisers</a></li>                          
+                  <!-- <li><a href="?action=login_as_user">Login as User</a></li> -->      
+                 <li role="separator" class="divider"></li>   
+                <li><a href="?action=mass_create_appraisers">Mass Create Appraisers</a></li>    
+                <li><a href="?action=mass_sending_email">Mass Sending Emails</a></li>                        
               </ul>
         </li>
        
