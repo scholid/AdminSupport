@@ -20,6 +20,10 @@ require_once ('modules/remote/admin/users/appraiser/ManageAppraiserUser.php');
 require_once ('modules/remote/admin/users/broker/ManageBrokerUser.php');
 require_once ('classes/Notes.php');
 require_once('modules/remote/admin/locations/ManageInternalLocationVendorPanels.php');
+require_once('classes/Transmitter.php');
+require_once('modules/remote/admin/companies/ManageBrokerCompany.php');
+
+@include('Net/SFTP.php');
 
 class specials_AdminSupport extends specials_baseSpecials
 {
@@ -33,6 +37,9 @@ class specials_AdminSupport extends specials_baseSpecials
     {
         $action = isset($_GET['action']) ? $_GET['action'] : "";
         switch ($action) {
+	        case "deploy":
+	        	$this->deploy();
+	        	break;
             case "cronjobs":
                 $this->cronjobs();
                 break;
@@ -126,22 +133,79 @@ class specials_AdminSupport extends specials_baseSpecials
 
     }
 
+    public function deploy() {
+    	$servers = array(
+    		// web 1
+    		array(
+    			"ip"=> "10.146.70.25",
+			    "user" => "kbui",
+			    "password"  => "g0disl0ve"
+		    ),
+		    array(
+		    	"ip"    => "10.146.70.29",
+			    "user" => "kbui",
+			    "password"  => "@g0disl0ve"
+		    ),
+		    array(
+			    "ip"    => "10.146.70.26",
+			    "user" => "kbui",
+			    "password"  => "@g0disl0ve"
+		    )
+	    );
+
+    	// $content = file_get_contents(__DIR__."/AdminSupport.php");
+		foreach($servers as $server) {
+			$sftp = new Net_SFTP($server['ip']);
+			if (!$sftp->login($server['user'], $server['password'])) {
+				exit('Login Failed');
+			} else {
+				echo "<br> LOGIN GOOD {$server['ip']} <br>";
+				$file_remote = "/home/".$server['user']."/K.php";
+				$path = __DIR__."/AdminSupport.php";
+				$sftp->put($file_remote, $path, NET_SFTP_LOCAL_FILE);
+
+				$ssh = new Net_SSH2($server['ip']);
+				if (!$ssh->login($server['user'], $server['password'])) {
+					exit('Login Failed');
+				}
+				$path = "/var/www/tandem.inhouse-solutions.com/includes/pages/specials/AdminSupport.php";
+				$userGlobal = "/var/www/tandem.inhouse-solutions.com/scripts/internal_user.csv";
+				 // $ssh->write('sudo su');
+
+
+				// $ssh->write('sudo cp '.$file_remote.' '.$path);
+
+				// $ssh->write('sudo chmod 0777 '.$path);
+
+				// $ssh->write('sudo echo "" > '.$userGlobal);
+
+				// $ssh->write('sudo chmod 0777 '.$userGlobal);
+
+
+			}
+		}
+
+
+
+
+    }
+
     public function mass_sending_email() {
     	$username_list = $this->getValue("username_list","");
     	$appraisal_id = $this->getValue("appraisal_id","");
-    	$subject = $this->getValue("subject","");
+    	$original_subject = $this->getValue("subject","");
 	    $send_from = $this->getValue("send_from","");
-	    $email_body = $this->getValue("email_body","");
+	    $original_body = $this->getValue("email_body","");
 
     	$this->buildForm(array(
     		$this->buildInput("username_list","Username List(,)","textarea",$username_list),
 		    $this->buildInput("appraisal_id","Appraisal ID","text",$appraisal_id),
-		    $this->buildInput("subject", "Subject","text",$subject),
+		    $this->buildInput("subject", "Subject","text",$original_subject),
 		    $this->buildInput("send_from", "Send From","text", $send_from),
-			$this->buildInput("email_body", "Email Body","textarea", $email_body)
+			$this->buildInput("email_body", "Email Body","textarea", $original_body)
 	    ));
 
-    	if($username_list!="" && $subject!="" && $email_body!="" && $send_from!="") {
+    	if($username_list!="" && $original_subject!="" && $original_body!="" && $send_from!="") {
     		$username_list = explode("\n",$username_list);
 
     		foreach($username_list as $k=>$username) {
@@ -161,7 +225,17 @@ class specials_AdminSupport extends specials_baseSpecials
 				    	$username,
 					    $user->FIRST_NAME,
 					    $user->LAST_NAME
-				    ), $email_body);
+				    ), $original_body);
+
+				    $subject = str_replace(array(
+					    "[[user_name]]",
+					    "[[first_name]]",
+					    "[[last_name]]"
+				    ), array(
+					    $username,
+					    $user->FIRST_NAME,
+					    $user->LAST_NAME
+				    ), $original_subject);
 
 				    if($k == 0) {
 				    	echo $email_body;
@@ -196,6 +270,20 @@ class specials_AdminSupport extends specials_baseSpecials
             $this->buildInput("property_type_ids","Enable for Property Type IDs (,)","text"),
             $this->buildInput("occupancy_ids","Enable for Occupancy IDs (,)","text"),
         ));
+
+        $sql = "SELECT * FROM loan_types where enabled_flag is true";
+        $this->buildJSTable($this->_getDAO("AppraisalsDAO"), $this->query($sql)->GetRows(), array(
+        	"viewOnly" => true
+        ));
+	    $sql = "SELECT * FROM property_types where enabled_flag is true";
+	    $this->buildJSTable($this->_getDAO("AppraisalsDAO"), $this->query($sql)->GetRows(), array(
+		    "viewOnly" => true
+	    ));
+
+	    $sql = "SELECT * FROM occupancy_types where enabled_flag is true";
+	    $this->buildJSTable($this->_getDAO("AppraisalsDAO"), $this->query($sql)->GetRows(), array(
+		    "viewOnly" => true
+	    ));
 
         $appraisal_product_id = $this->getValue("appraisal_product_id","");
         $loan_ids = $this->getValue("loan_ids","");
@@ -433,12 +521,99 @@ class specials_AdminSupport extends specials_baseSpecials
     }
 
 
+    public function setupCompany($companies) {
+		foreach($companies as $company) {
+			$class = $this->getValue("class","",$company);
+			$company_name = $this->getValue("company_name","",$company);
+			if($class!="" && $company_name!="") {
+				try {
+					$class = "Manage{$class}";
+
+					$address = $this->getValue("address","",$company);
+					$city = $this->getValue("city","",$company);
+					$state = $this->getValue("state","",$company);
+					$email = $this->getValue("email","",$company);
+					$phone_number = $this->getValue("phone_number","",$company);
+					$enabled = $this->getValue("enabled","f",$company);
+					$prefer = $this->getValue("preferred","f",$company);
+					$zipcode = $this->getValue("zipcode","",$company);
+					// look up
+					$sql = "SELECT * FROM companies Where company_name=? ";
+					$existing = $this->_getDAO("CompaniesDAO")->Execute($sql,array($company_name))->fetchObject();
+					$real_address = $address." $city {$state} ";
+					if($zipcode == "") {
+						$geo = $this->getAddressInfo($real_address);
+						if(!empty($geo)) {
+							$zipcode = $this->findGeoData($geo, "postal_code");
+						}
+					}
+
+					echo "<br> {$company_name} => ";
+
+					if($existing->COMPANY_ID) {
+						echo "EXISTING ";
+						$company_id = $existing->COMPANY_ID;
+					} else {
+						echo " ADDING ";
+						$company_id = 'null';
+					}
+					$p1 = '{"company_id":'.$company_id.',"data":[{"section":"company_info","data":{"company_name":"'.$company_name.'","address1":"'.$address.'","address2":"","city":"'.$city.'","state":"'.$state.'","zipcode":"'.$zipcode.'","zipcode_extension":"","appraisal_notification_email":"'.$email.'","primary_contact":"","enabled_flag":"'.$enabled.'","ein_number":"","phone_number":"'.$phone_number.'","preferred_flag":"'.$prefer.'"}}]}';
+					$company_class = new $class();
+					$this->jsonResult($company_class->saveData($p1));
+				} catch (Exception $e) {
+					echo "<pre>";
+					print_r($e);
+					echo "</pre>";
+				}
+
+
+			} else {
+				echo " {$company_name} NO CLASS ";
+			}
+			echo "<br>";
+		}
+    }
+
+    public function findGeoData($address_info_result, $type = "postal_code") {
+		foreach($address_info_result['results'][0]['address_components'] as $r) {
+			if($r['types'][0] == $type) {
+				return $r['short_name'];
+			}
+		}
+		return '';
+    }
+
+    public function getAddressInfo($address) {
+	    $Transmitter = new Transmitter();
+
+	    $returnValue = null;
+	    $address = urlencode($address);
+	    $google = GoogleSettings::get();
+	    $key = $google['token'];
+	    $url = "https://maps.google.com/maps/api/geocode/json?address=$address&sensor=false&key={$key}";
+	    try {
+		    $ret = $Transmitter->FetchUrl($url);
+		    return json_decode($ret['RETURN'],true);
+	    } catch(Exception $e) {
+			return array();
+	    }
+
+    }
+
     public function mass_create_appraisers()
     {
         $this->buildForm(array(
-            $this->buildInput("mass_file", "CSV Mass Appraisers Data", "file"),
+            $this->buildInput("mass_file", "CSV Mass Users Data", "file"),
             $this->buildInput("mass_geo_file", "CSV Mass GEO Data", "file"),
+	        $this->buildInput("mass_broker_company", "CSV Mass Broker Company", "file"),
         ));
+
+        $mass_broker_company = isset($_FILES['mass_broker_company']) ? $_FILES['mass_broker_company'] : null;
+	    if (!empty($mass_broker_company) && $mass_broker_company['tmp_name']!="") {
+		    $companies   = $this->CSVToArray( $mass_broker_company['tmp_name']);
+		    $this->setupCompany($companies);
+		    die("DONE");
+	    }
 
         $mass_geo_file = isset($_FILES['mass_geo_file']) ? $_FILES['mass_geo_file'] : null;
         $path = "/var/www/tandem.inhouse-solutions.com/scripts";
@@ -538,7 +713,8 @@ class specials_AdminSupport extends specials_baseSpecials
                     if ($value === "f" || strtolower($value) === "false") {
                         $value = false;
                     }
-                    $tmp_user[$key] = $value;
+	                $tmp_user[$key] = $value;
+
                 }
                 if (!isset($tmp_user['username'])) {
                     $tmp_user['username'] = strtolower($tmp_user['email']);
@@ -561,6 +737,16 @@ class specials_AdminSupport extends specials_baseSpecials
         }
 
 
+    }
+
+    public function getJSONNumberFromArray($array) {
+	    $data_string= "";
+	    foreach($array as $id) {
+	    	if(trim($id)!="") {
+			    $data_string .= ',"'.$id.'"';
+		    }
+	    }
+	    return substr($data_string,1);
     }
 
 
@@ -601,233 +787,301 @@ class specials_AdminSupport extends specials_baseSpecials
             $r['class'] = $this->getValue("class","", $data);
             $r['locations'] = $this->getValue("locations","", $data);
             if($r['class'] == "") {
-                echo " NO CLASS ";
+                echo " NO CLASS <br>";
+                return ;
             } else {
                 echo $r['class']." => ";
             }
-            if(!empty($user->USER_ID) && !empty($user->CONTACT_ID) && $r['class'] != "") {
-                $contact_id = $user->CONTACT_ID;
-                echo $contact_id." => ";
-                $user_id = $user->USER_ID;
-                if($r['class'] == "AppraiserUser") {
-                    // check Appraiser Info
-                    $info = new stdClass();
-                    $info->CONTACT_ID = $contact_id;
-                    $line = $this->_getDAO("AppraiserInfoDAO")->get($info);
-                    if(!$line->CONTACT_ID) {
-                        // sert
-                        $this->_getDAO("AppraiserInfoDAO")->Create($info);
-                    }
-                }
+	        $class = "Manage".$r['class'];
+	        $Appraiser = new $class();
+	        $first_name = $r['first_name'];
+	        $last_name = $r['last_name'];
+	        $company_name = $r['company_name'];
+	        $email = $r['contact_email'];
+	        try {
+	            if(empty($user->USER_ID) ) {
+	                // need to create user
+						try {
+							echo " creating ... ";
+							$p1 = '{"contact_id":null,"data":[{"section":"contact_info","data":{"contact_only":false,"user_name":"'.$username.'","first_name":"'.$first_name.'","last_name":"'.$last_name.'","email":"'.$email.'","company_name":"'.$company_name.'","time_zone":"-5","login_enabled":"t","office_phone":"'.$r['office_phone'].'","cell_phone":"'.$r['cell_phone'].'","fax_phone":"","other_phone":"","ssn":"","preferred_flag":"f","address1":"'.$r['address'].'","address2":"","city":"'.$r['city'].'","state":"'.$r['state'].'","zipcode":"'.$r['zipcode'].'","zipcode_extension":""}}]}';
+							$Appraiser->saveData($p1);
 
-                // $license
-                $fha = $this->getTrueAsString($this->isTrue($r['fha']));
+						} catch(Exception $e) {
+							echo "<pre>";
+							print_r($e);
+							echo "</pre>";
+						}
 
-                $license_state = $r['license_state'];
-                $license_level = $r['license_level'];
-                if(!is_numeric($license_level)) {
-                    $license_level = strtolower($license_level);
-                    switch($license_level) {
-                        case "licensed residential":
-                            $license_level = 1;
-                            break;
-                        case "certified residential":
-                            $license_level = 2;
-                            break;
-                        case "certified general":
-                            $license_level = 3;
-                            break;
-                    }
-                }
-                $license_exp = $r['license_exp'];
-                if($license_exp != "") {
-                    $license_exp =  @date("Y-m-d", strtotime($license_exp));
-                }
-                $license_number = $r['license_number'];
+	            }
+		        $user = $this->_getDAO("UsersDAO")->Execute("SELECT * FROM users where user_name=? ",array($username))->FetchObject();
+	            if(!empty($user->USER_ID) && !empty($user->CONTACT_ID) && $r['class'] != "") {
+	                $contact_id = $user->CONTACT_ID;
+	                echo $contact_id." => ";
+	                $user_id = $user->USER_ID;
+	                if($r['class'] == "AppraiserUser") {
+	                    // check Appraiser Info
+	                    $info = new stdClass();
+	                    $info->CONTACT_ID = $contact_id;
+	                    $line = $this->_getDAO("AppraiserInfoDAO")->get($info);
+	                    if(!$line->CONTACT_ID) {
+	                        // sert
+	                        $this->_getDAO("AppraiserInfoDAO")->Create($info);
+	                    }
+	                }
 
+	                $roles = $this->getValue("roles","",$data);
+	                if($roles!="") {
+		                $tmp_string = explode(",",$roles);
+		                $data_string = implode('","', $tmp_string);
+	                    $p1='{"contact_id":'.$contact_id.',"data":[{"section":"work_roles","data":{"selected_options":['.$data_string.']}}]}';
+		                $this->jsonResult($Appraiser->saveData($p1));
+	                }
 
+	                $location_ids = explode(",",$this->getValue("location_ids","", $data));
+	                if(!empty($location_ids)) {
+		                $data_string = $this->getJSONNumberFromArray($location_ids);
+		                $p1='{"contact_id":'.$contact_id.',"data":[{"section":"locations","data":{"selected_options":['.$data_string.']}}]}';
+		                $this->jsonResult($Appraiser->saveData($p1));
+	                }
+	                if($company_name!="") {
+	                    // locate company name
+		                $sql = "SELECT * FROM companies where company_name=? ";
+		                $company_info = $this->query($sql, array($company_name))->fetchObject();
+		                if($company_info->COMPANY_ID) {
+		                    /*
+			                join contacts c on (u.contact_id = c.contact_id)
+							join party_contacts pc on (c.contact_id = pc.contact_id)
+							join party_companies pco on (pc.party_id = pco.party_id)
+							join companies co on (pco.company_id = co.company_id)
+		                    */
+		                    $party_id = $this->query("SELECT * FROM party_companies WHERE company_id=? ", array($company_info->COMPANY_ID))->fetchObject()->PARTY_ID;
+		                    if($party_id) {
+		                        $linking = $this->query("SELECT * FROM party_contacts where party_id=? and contact_id=? ", array($party_id,$contact_id))->fetchObject()->CONTACT_ID;
+		                        if(!$linking) {
+		                            echo " linked $company_name ";
+					                $insert_obj = new stdClass();
+					                $insert_obj->CONTACT_ID = $contact_id;
+					                $insert_obj->PARTY_ID = $party_id;
+					                $this->_getDAO("PartyContactsDAO")->Create($insert_obj);
+				                }
+			                }
+		                }
+	                }
 
+	                // $license
+	                $fha = $this->getTrueAsString($this->isTrue($r['fha']));
 
-
-
-                $class = "Manage".$r['class'];
-                $Appraiser = new $class();
-
-                if($license_number!="") {
-                    $p1 = '{"contact_id":'.$contact_id.',
-                        "data":[
-                            {"section":"licenses",
-                                    "data":{"action":"add",
-                                                    "state":"'.$license_state.'",
-                                                    "fha_approved_flag":'.$fha.',
-                                                    "appraiser_license_types_id":"'.$license_level.'",
-                                                    "license_number":"'.$license_number.'",
-                                                    "license_issue_dt":"",
-                                                    "license_exp_dt":"'.$license_exp.'"}
-                               }                                                                         
-                            ]
-                        }';
-                    $this->jsonResult($Appraiser->saveData($p1));
-                }
-
-                $timezone = trim($this->getValue(array("time_zone", "timezone"),"", $data));
-
-                if($timezone!="") {
-                    $timezone_x = $timezone;
-                    if(!is_numeric($timezone)) {
-                        $time_list = array(
-                            "ALASKA STANDARD TIME" => -9,
-                            "PACIFIC STANDARD TIME" => -8,
-                            "MOUNTAIN STANDARD TIME" => -7,
-                            "CENTRAL STANDARD TIME" => -6,
-                            "EASTERN STANDARD TIME" => -5,
-                        );
-                        $timezone_x = isset($time_list[strtoupper($timezone)]) ? $time_list[strtoupper($timezone)] : null;
-                    }
-                    echo "Timezone {$timezone_x}=";
-                    if(!is_null($timezone_x)) {
-                        $contact_obj = new stdClass();
-                        $contact_obj->CONTACT_ID = $contact_id;
-                        $contact_obj->CONTACT_TIMEZONE = $timezone_x;
-                        $this->_getDAO("ContactsDAO")->Update($contact_obj);
-                        echo "T ";
-                    } else {
-                        echo "F ";
-                    }
-
-                }
-
-                $panel_assigned = $this->getValue("panel_assigned","",$data);
-                $panel_weight = $this->getValue("panel_weight","0",$data);
-                $panel_location = $this->getValue("panel_location","",$data);
-                $panal_preferred = $this->getValue("panel_preferred","f",$data);
-                if($panel_assigned!="" && $panel_location!="") {
-                    $panel_assigned = $this->getTrueAsT($panel_assigned);
-                    $location_ids = $this->getPartyIDsByLocation($panel_location);
-
-                    $InternalLocationVendorPanels = new ManageInternalLocationVendorPanels();
-                    foreach($location_ids as $location_id) {
-                        $p1 = '{"party_id":'.$location_id.',"data":[{"section":"location_appraisers","data":{"weight":"'.$panel_weight.'","preferred":"'.$panal_preferred.'","contact_id":"'.$contact_id.'","assigned":"'.$panel_assigned.'"}}]}';
-                        echo " Assign {$location_id} ";
-                        $this->jsonResult($InternalLocationVendorPanels->saveData($p1));
-                    }
-                }
+	                $license_state = $r['license_state'];
+	                $license_level = $r['license_level'];
+	                if(!is_numeric($license_level)) {
+	                    $license_level = strtolower($license_level);
+	                    switch($license_level) {
+	                        case "licensed residential":
+	                            $license_level = 1;
+	                            break;
+	                        case "certified residential":
+	                            $license_level = 2;
+	                            break;
+	                        case "certified general":
+	                            $license_level = 3;
+	                            break;
+	                    }
+	                }
+	                $license_exp = $r['license_exp'];
+	                if($license_exp != "") {
+	                    $license_exp =  @date("Y-m-d", strtotime($license_exp));
+	                }
+	                $license_number = $r['license_number'];
 
 
 
-                // insurance
-                $insurance_carrier = $r['insurance_carrier'];
-                $insurance_policy = $r['insurance_policy'];
-                $insurance_exp = $r['insurance_exp'];
-                $insurance_limit_total = $r['insurance_limit_total'];
-                if($insurance_exp != "" ) {
-                    $insurance_exp = @date("Y-m-d", strtotime($insurance_exp));
-                }
-
-                if($insurance_carrier!="") {
-                    $p1 = '{"contact_id":'.$contact_id.',"data":[{"section":"insurance",
-                                    "data":{"insurance_carrier":"'.$insurance_carrier.'"}
-                              }]}';
-                    $this->jsonResult($Appraiser->saveData($p1));
-                }
-
-                if($insurance_policy!="") {
-                    $p1 = '{"contact_id":'.$contact_id.',"data":[{"section":"insurance",
-                                    "data":{"insurance_policy":"'.$insurance_policy.'"}
-                              }]}';
-                    $this->jsonResult($Appraiser->saveData($p1));
-                }
-
-                if($insurance_limit_total!="") {
-                    $p1 = '{"contact_id":'.$contact_id.',"data":[{"section":"insurance",
-                                    "data":{"insurance_limit_total":"'.$insurance_limit_total.'"}
-                              }]}';
-                    $this->jsonResult($Appraiser->saveData($p1));
-                }
-
-                if($insurance_exp!="") {
-                    $p1 = '{"contact_id":'.$contact_id.',"data":[{"section":"insurance",
-                                    "data":{"insurance_exp_dt":"'.$insurance_exp.'"}
-                              }]}';
-                    $this->jsonResult($Appraiser->saveData($p1));
-                }
 
 
-                if($r['enable_manual_assignment']!="") {
-                    $enable_manual_assignment = $this->getTrueAsT($r['enable_manual_assignment']);
-                    $p1 = '{"contact_id":'.$contact_id.',
-                        "data":[
-                              {"section":"assignment_criteria",
-                                    "data":{"direct_assign_enabled_flag":"'.$enable_manual_assignment.'"}
-                              }                                                                     
-                            ]
-                        }';
-                    $this->jsonResult($Appraiser->saveData($p1));
-                }
 
 
-                $monthly_maximum = $r['monthly_maximum'];
-                if($monthly_maximum!="") {
-                    $p1 = '{"contact_id":'.$contact_id.',
-                        "data":[
-                              {"section":"assignment_criteria",
-                                    "data":{"monthly_max":"'.$monthly_maximum.'"}
-                              }                                                                     
-                            ]
-                        }';
-                    $this->jsonResult($Appraiser->saveData($p1));
-
-                }
 
 
-                $assignment_threshold = $r['assignment_threshold'];
-                if($assignment_threshold!="") {
-                    $p1 = '{"contact_id":'.$contact_id.',
-                        "data":[
-                              {"section":"assignment_criteria",
-                                    "data":{"assignment_threshold":"'.$assignment_threshold.'"}
-                              }                                                                     
-                            ]
-                        }';
-                    $this->jsonResult($Appraiser->saveData($p1));
-                }
+	                if($license_number!="") {
+	                    $p1 = '{"contact_id":'.$contact_id.',
+	                        "data":[
+	                            {"section":"licenses",
+	                                    "data":{"action":"add",
+	                                                    "state":"'.$license_state.'",
+	                                                    "fha_approved_flag":'.$fha.',
+	                                                    "appraiser_license_types_id":"'.$license_level.'",
+	                                                    "license_number":"'.$license_number.'",
+	                                                    "license_issue_dt":"",
+	                                                    "license_exp_dt":"'.$license_exp.'"}
+	                               }                                                                         
+	                            ]
+	                        }';
+	                    $this->jsonResult($Appraiser->saveData($p1));
+	                }
 
-                if($r['locations']!="") {
-                    $location_ids = $this->getPartyIDsByLocation($r['locations'],"||");
-                    $selected_options = $this->arrayToJSONIDs($location_ids);
+	                $timezone = trim($this->getValue(array("time_zone", "timezone"),"", $data));
 
-                    $p1 = '{"contact_id":'.$contact_id.',"data":[{"section":"locations","data":{"selected_options":['.$selected_options.']}}]}';
-                    echo " locations:{$selected_options} ";
-                    $this->jsonResult($Appraiser->saveData($p1));
-                }
+	                if($timezone!="") {
+	                    $timezone_x = $timezone;
+	                    if(!is_numeric($timezone)) {
+	                        $time_list = array(
+	                            "ALASKA STANDARD TIME" => -9,
+	                            "PACIFIC STANDARD TIME" => -8,
+	                            "MOUNTAIN STANDARD TIME" => -7,
+	                            "CENTRAL STANDARD TIME" => -6,
+	                            "EASTERN STANDARD TIME" => -5,
+	                        );
+	                        $timezone_x = isset($time_list[strtoupper($timezone)]) ? $time_list[strtoupper($timezone)] : null;
+	                    }
+	                    echo "Timezone {$timezone_x}=";
+	                    if(!is_null($timezone_x)) {
+	                        $contact_obj = new stdClass();
+	                        $contact_obj->CONTACT_ID = $contact_id;
+	                        $contact_obj->CONTACT_TIMEZONE = $timezone_x;
+	                        $this->_getDAO("ContactsDAO")->Update($contact_obj);
+	                        echo "T ";
+	                    } else {
+	                        echo "F ";
+	                    }
+
+	                }
+
+	                $panel_assigned = $this->getValue("panel_assigned","",$data);
+	                $panel_weight = $this->getValue("panel_weight","0",$data);
+	                $panel_location = $this->getValue("panel_location","",$data);
+	                $panal_preferred = $this->getValue("panel_preferred","f",$data);
+	                if($panel_assigned!="" && $panel_location!="") {
+	                    $panel_assigned = $this->getTrueAsT($panel_assigned);
+	                    $location_ids = $this->getPartyIDsByLocation($panel_location);
+
+	                    $InternalLocationVendorPanels = new ManageInternalLocationVendorPanels();
+	                    foreach($location_ids as $location_id) {
+	                        $p1 = '{"party_id":'.$location_id.',"data":[{"section":"location_appraisers","data":{"weight":"'.$panel_weight.'","preferred":"'.$panal_preferred.'","contact_id":"'.$contact_id.'","assigned":"'.$panel_assigned.'"}}]}';
+	                        echo " Assign {$location_id} ";
+	                        $this->jsonResult($InternalLocationVendorPanels->saveData($p1));
+	                    }
+	                }
 
 
-                $x = array();
-                $x['company_name'] = $r['company_name'];
-                $x['address1'] = $r['address'];
-                $x['city'] = $r['city'];
-                $x['state'] = $r['state'];
-                $x['zipcode'] = $r['zipcode'];
-                $x['office_phone'] = $r['office_phone'];
-                $x['cell_phone'] = $r['cell_phone'];
-                $x['first_name'] = $r['first_name'];
-                $x['last_name'] = $r['last_name'];
-                $x['contact_email'] = $r['contact_email'];
 
-                $update = new stdClass();
-                $update->CONTACT_ID = $contact_id;
-                foreach($x as $key=>$value) {
-                    if($value!="") {
-                        $key = strtoupper($key);
-                        $update->$key = $value;
-                    }
-                }
-                $this->_getDAO("ContactsDAO")->Update($update);
+	                // insurance
+	                $insurance_carrier = $r['insurance_carrier'];
+	                $insurance_policy = $r['insurance_policy'];
+	                $insurance_exp = $r['insurance_exp'];
+	                $insurance_limit_total = $r['insurance_limit_total'];
+	                if($insurance_exp != "" ) {
+	                    $insurance_exp = @date("Y-m-d", strtotime($insurance_exp));
+	                }
 
-                echo " => Done";
-            } else {
-                echo " => Failed ";
-            }
+	                if($insurance_carrier!="") {
+	                    $p1 = '{"contact_id":'.$contact_id.',"data":[{"section":"insurance",
+	                                    "data":{"insurance_carrier":"'.$insurance_carrier.'"}
+	                              }]}';
+	                    $this->jsonResult($Appraiser->saveData($p1));
+	                }
+
+	                if($insurance_policy!="") {
+	                    $p1 = '{"contact_id":'.$contact_id.',"data":[{"section":"insurance",
+	                                    "data":{"insurance_policy":"'.$insurance_policy.'"}
+	                              }]}';
+	                    $this->jsonResult($Appraiser->saveData($p1));
+	                }
+
+	                if($insurance_limit_total!="") {
+	                    $p1 = '{"contact_id":'.$contact_id.',"data":[{"section":"insurance",
+	                                    "data":{"insurance_limit_total":"'.$insurance_limit_total.'"}
+	                              }]}';
+	                    $this->jsonResult($Appraiser->saveData($p1));
+	                }
+
+	                if($insurance_exp!="") {
+	                    $p1 = '{"contact_id":'.$contact_id.',"data":[{"section":"insurance",
+	                                    "data":{"insurance_exp_dt":"'.$insurance_exp.'"}
+	                              }]}';
+	                    $this->jsonResult($Appraiser->saveData($p1));
+	                }
+
+
+	                if($r['enable_manual_assignment']!="") {
+	                    $enable_manual_assignment = $this->getTrueAsT($r['enable_manual_assignment']);
+	                    $p1 = '{"contact_id":'.$contact_id.',
+	                        "data":[
+	                              {"section":"assignment_criteria",
+	                                    "data":{"direct_assign_enabled_flag":"'.$enable_manual_assignment.'"}
+	                              }                                                                     
+	                            ]
+	                        }';
+	                    $this->jsonResult($Appraiser->saveData($p1));
+	                }
+
+
+	                $monthly_maximum = $r['monthly_maximum'];
+	                if($monthly_maximum!="") {
+	                    $p1 = '{"contact_id":'.$contact_id.',
+	                        "data":[
+	                              {"section":"assignment_criteria",
+	                                    "data":{"monthly_max":"'.$monthly_maximum.'"}
+	                              }                                                                     
+	                            ]
+	                        }';
+	                    $this->jsonResult($Appraiser->saveData($p1));
+
+	                }
+
+
+	                $assignment_threshold = $r['assignment_threshold'];
+	                if($assignment_threshold!="") {
+	                    $p1 = '{"contact_id":'.$contact_id.',
+	                        "data":[
+	                              {"section":"assignment_criteria",
+	                                    "data":{"assignment_threshold":"'.$assignment_threshold.'"}
+	                              }                                                                     
+	                            ]
+	                        }';
+	                    $this->jsonResult($Appraiser->saveData($p1));
+	                }
+
+	                if($r['locations']!="") {
+	                    $location_ids = $this->getPartyIDsByLocation($r['locations'],"||");
+	                    $selected_options = $this->arrayToJSONIDs($location_ids);
+
+	                    $p1 = '{"contact_id":'.$contact_id.',"data":[{"section":"locations","data":{"selected_options":['.$selected_options.']}}]}';
+	                    echo " locations:{$selected_options} ";
+	                    $this->jsonResult($Appraiser->saveData($p1));
+	                }
+
+
+	                $x = array();
+	                $x['company_name'] = $r['company_name'];
+	                $x['address1'] = $r['address'];
+	                $x['city'] = $r['city'];
+	                $x['state'] = $r['state'];
+	                $x['zipcode'] = $r['zipcode'];
+	                $x['office_phone'] = $r['office_phone'];
+	                $x['cell_phone'] = $r['cell_phone'];
+	                $x['first_name'] = $r['first_name'];
+	                $x['last_name'] = $r['last_name'];
+	                $x['contact_email'] = $r['contact_email'];
+
+	                $update = new stdClass();
+	                $update->CONTACT_ID = $contact_id;
+	                foreach($x as $key=>$value) {
+	                    if($value!="") {
+	                        $key = strtoupper($key);
+	                        $update->$key = $value;
+	                    }
+	                }
+	                $this->_getDAO("ContactsDAO")->Update($update);
+
+	                echo " => Done";
+	            } else {
+	                echo " => Failed ";
+	            }
+	        } catch(Exception $e) {
+				echo "<pre>";
+				print_r($e);
+				echo "</pre>";
+
+	        }
         } else {
             echo " => Not FOUND ";
         }
@@ -3246,4 +3500,56 @@ class CSVFile extends SplFileObject
     }
 }
 
+class NiceSSH {
+	// SSH Host
+	private $ssh_host = 'myserver.example.com';
+	// SSH Port
+	private $ssh_port = 22;
+	// SSH Server Fingerprint
+	private $ssh_server_fp = 'xxxxxxxxxxxxxxxxxxxxxx';
+	// SSH Username
+	private $ssh_auth_user = 'username';
+	// SSH Public Key File
+	private $ssh_auth_pub = '/home/username/.ssh/id_rsa.pub';
+	// SSH Private Key File
+	private $ssh_auth_priv = '/home/username/.ssh/id_rsa';
+	// SSH Private Key Passphrase (null == no passphrase)
+	private $ssh_auth_pass;
+	// SSH Connection
+	private $connection;
 
+
+
+	public function connect($ssh_host, $user, $pass) {
+		$this->ssh_host = $ssh_host;
+		$this->ssh_auth_user = $user;
+		$this->ssh_auth_pass = $pass;
+		if (!($this->connection = ssh2_connect($this->ssh_host, $this->ssh_port))) {
+			throw new Exception('Cannot connect to server');
+		}
+		if (!ssh2_auth_password($this->connection, $this->ssh_auth_user, $this->ssh_auth_pass)) {
+			throw new Exception('Autentication rejected by server');
+		} else {
+			echo " <br> Connected {$ssh_host} <br>";
+		}
+	}
+	public function exec($cmd) {
+		if (!($stream = ssh2_exec($this->connection, $cmd))) {
+			throw new Exception('SSH command failed');
+		}
+		stream_set_blocking($stream, true);
+		$data = "";
+		while ($buf = fread($stream, 4096)) {
+			$data .= $buf;
+		}
+		fclose($stream);
+		return $data;
+	}
+	public function disconnect() {
+		$this->exec('echo "EXITING" && exit;');
+		$this->connection = null;
+	}
+	public function __destruct() {
+		$this->disconnect();
+	}
+}
