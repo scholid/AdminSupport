@@ -124,13 +124,81 @@ class specials_AdminSupport extends specials_baseSpecials
             case "engine":
                 $this->engine();
                 break;
+	        case "fixCompletedEmail":
+	        	$this->fixCompletedEmail();
+	        	break;
             default:
 
                 break;
 
         }
-        $sql = "SELECT * FROM users where user_id=100 ";
 
+
+
+    }
+
+    public function fixCompletedEmail() {
+	    $schemas = $this->getAllSchema();
+	    foreach($schemas as $schema=>$connection) {
+		    echo $schema."<br>";
+		    $sql = "SELECT * 
+			FROM appraisal_status_history AS ASH
+			LEFT JOIN appraisal_status_updated_jobs AS Job ON (JOB.appraisal_status_history_id = ASH.appraisal_status_history_id )
+			where ASH.updated_flag IS FALSE 
+			AND ASH.status_type_id=9
+			AND ASH.status_date > '2017-11-17 18:00:00' 
+			ORDER BY Job.appraisal_id DESC ";
+		    $jobs = $this->sqlSchema($schema,$sql)->GetRows();
+		    foreach($jobs as $job) {
+			    $appraisal_id = $job['appraisal_id'];
+			    echo $appraisal_id." => ";
+			    $appraisal = $this->sqlSchema($schema, "SELECT * FROM appraisals where appraisal_id= ?", array($appraisal_id))->fetchObject();
+			    $borrower_email = $appraisal->BORROWER1_EMAIL;
+			    if($borrower_email!="") {
+			    	echo " FOUND {$borrower_email} ";
+				    // locate borrower email
+				    $sql = "SELECT * 
+					FROM notification_jobs_appraisals JA 
+					INNER JOIN notification_jobs AS NJ ON JA.notification_job_id=NJ.notification_job_id 
+					WHERE JA.appraisal_id= ? AND NJ.message_to=? AND NJ.body like '%Completed%' and NJ.subject like 'Status Updated%' 
+					AND (NJ.last_attempted_timestamp >= ? OR NJ.target_date >= ?)
+					
+					LIMIT 1";
+				    $email = $this->sqlSchema($schema, $sql, array($appraisal_id, $borrower_email, $job['last_attempted_timestamp'], $job['last_attempted_timestamp']))->fetchObject();
+				    $should_send = false;
+
+				    if($email->NOTIFICATION_JOB_ID) {
+				    	echo " SENT ALREADY {$email->LAST_ATTEMPTED_TIMESTAMP} / {$email->TARGET_DATE} ";
+						// locate conditions
+				    } else {
+					    echo " NOT SEND ";
+					    $should_send = true;
+				    }
+
+				    if($should_send == true) {
+					    echo " NOT SENT YET -> Updated Null for Job {$job['appraisal_status_updated_job_id']} ";
+					    $sql = "SELECT * FROM appraisal_status_updated_jobs WHERE appraisal_id=? AND appraisal_status_updated_job_id=? ";
+					    $current = $this->sqlSchema($schema, $sql, array($appraisal_id,$job['appraisal_status_updated_job_id']))->fetchObject();
+					    echo $current->JOB_COMPLETED_FLAG;
+					    if(is_null($current->JOB_COMPLETED_FLAG) && $current->JOB_COMPLETED_FLAG!=true) {
+						    echo "<i> Already NULLED </i> ";
+					    } else {
+						    // doing update
+						    $sql = "UPDATE appraisal_status_updated_jobs set job_completed_flag=null WHERE appraisal_id=? AND appraisal_status_updated_job_id=? ";
+						    $this->sqlSchema($schema, $sql, array($appraisal_id,$job['appraisal_status_updated_job_id']));
+						    echo "<b> DONE </b>";
+					    }
+				    }
+
+			    } else {
+			    	echo " NO BORROWER EMAIL ";
+			    }
+			    echo "<br>";
+		    }
+
+
+
+	    }
     }
 
     public function deploy() {
@@ -341,36 +409,37 @@ class specials_AdminSupport extends specials_baseSpecials
         }
 
     }
+	var $connections = array();
+    public function getAllSchema() {
+	    $DirectoryHandle = opendir('/var/www/conf/tandem/');
+	    $this->connections = array();
+	    $k = 0;
+	    if(empty($this->connections)) {
+		    while ($FileName = readdir($DirectoryHandle)) {
+			    if (preg_match('/\.ini$/i', $FileName)) {
+				    $OPTIONS = parse_ini_file("/var/www/conf/tandem/$FileName", true);
+				    $ConnectionObj->HOST = $OPTIONS['PG_SQL']['HOST'];
+				    $ConnectionObj->USER = $OPTIONS['PG_SQL']['USER'];
+				    $ConnectionObj->PASSWORD = $OPTIONS['PG_SQL']['PASSWORD'];
+				    $ConnectionObj->DBNAME = $OPTIONS['PG_SQL']['DBNAME'];
+				    $ConnectionObj->OPTIONS = $OPTIONS;
+				    $file = $ConnectionObj->USER;
+				    $this->connections[$file]['connection'] = $ConnectionObj;
+				    $this->connections[$file]['options'] = $OPTIONS;
+				    unset($ConnectionObj);
+				    $OPTIONS = array();
+				    $k++;
+			    }
+		    }
+	    }
+	    return $this->connections;
+    }
 
-    var $connections = array();
-    public function sqlSchema($schema , $sql) {
-        $DirectoryHandle = opendir('/var/www/conf/tandem/');
-        $this->connections = array();
-        $k = 0;
-        if(empty($this->connections)) {
-            while ($FileName = readdir($DirectoryHandle)) {
-                if (preg_match('/\.ini$/i', $FileName)) {
-                    if (strlen($FileName) < 10) {
-                        continue;
-                    } else {
-                        $OPTIONS = parse_ini_file("/var/www/conf/tandem/$FileName", true);
-                        $ConnectionObj->HOST = $OPTIONS['PG_SQL']['HOST'];
-                        $ConnectionObj->USER = $OPTIONS['PG_SQL']['USER'];
-                        $ConnectionObj->PASSWORD = $OPTIONS['PG_SQL']['PASSWORD'];
-                        $ConnectionObj->DBNAME = $OPTIONS['PG_SQL']['DBNAME'];
-                        $ConnectionObj->OPTIONS = $OPTIONS;
-                        $this->connections[$k]['connection'] = $ConnectionObj;
-                        $this->connections[$k]['options'] = $OPTIONS;
-                        unset($ConnectionObj);
-                        $OPTIONS = array();
-                        $k++;
-                    }
-
-                }
-            }
-        }
-
-
+    public function sqlSchema($schema , $sql, $data = array()) {
+	    $this->getAllSchema();
+	    $connexion = $this->connections[$schema]['connection'];
+	    $Generic = new GenericDAO($connexion);
+	    return $Generic->Execute($sql,$data);
     }
 
     public function mass_create_note() {
