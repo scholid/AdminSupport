@@ -1,10 +1,13 @@
 <?php
+ini_set('include_path','.:../includes/:../includes/libs/:/usr/share/pear/:/var/www/tandem.inhouse-solutions.com/includes/:/var/www/tandem.inhouse-solutions.com/includes/libs/');
 ini_set('display_errors', 1);
 ini_set('display_startup_errors', 1);
 ini_set('max_execution_time', 600);
+
 set_time_limit(600);
 error_reporting(E_ALL & ~E_WARNING & ~E_NOTICE);
 
+require_once('pages/BasePage.php');
 require_once('classes/AppraisalOrderFactory.php');
 require_once('daos/DAOFactory.php');
 require_once ('pages/specials/baseSpecials.php');
@@ -22,6 +25,7 @@ require_once ('classes/Notes.php');
 require_once('modules/remote/admin/locations/ManageInternalLocationVendorPanels.php');
 require_once('classes/Transmitter.php');
 require_once('modules/remote/admin/companies/ManageBrokerCompany.php');
+require_once ('classes/AmcProductPricingRules.php');
 
 @include('Net/SFTP.php');
 
@@ -32,6 +36,7 @@ class specials_AdminSupport extends specials_baseSpecials
     protected $csv = array();
     protected $title = "";
     protected $data = array();
+    var $argv = array();
 
     public function buildBody()
     {
@@ -128,12 +133,348 @@ class specials_AdminSupport extends specials_baseSpecials
 	        	$this->fixCompletedEmail();
 	        	break;
             default:
+				if(method_exists($this,$action)) {
+					$this->$action();
+				}
 
                 break;
-
+			// importManageLocationPricing
+	        // fixPricingExcelSheet
+	        // testMe
         }
 
+    }
 
+    var $temp_pricing = array();
+
+    protected function isCmd() {
+    	return !empty($this->argv);
+    }
+
+    public function importManageLocationPricing() {
+    	echo "Example: file=path/file.csv party_id=1 reset=t schema=firstlook  \n";
+    	echo "Excel columns: product_name | state | county | zip | amount | is_quote | username | party_id | amc_name \n\n";
+
+	    if($this->isCmd()) {
+		    $file = $this->getValue("file","");
+		    if($file!="" && !file_exists($file)) {
+		    	$file = "/var/www/tandem.inhouse-solutions.com/".$file;
+		    }
+		    $party_id = $this->getValue("party_id",null);
+		    $reset_rules = $this->getValue("reset","f");
+		    $schema = $this->getValue("schema","");
+		    DAOFactory::$scriptConnectionObj = $this->getConnection($schema);
+		    $amc_id = null;
+		    $contact_id = null;
+		    $pricing = new AmcProductPricingRules();
+
+		    if($file!="" && $schema!="" && !empty(DAOFactory::$scriptConnectionObj)) {
+			    if($reset_rules == "t" && !empty($party_id)) {
+				    $this->_getDAO('AMCProductPricingRulesDAO')->ClearRulesForLender($party_id);
+				    $pricing->_createTopRule($amc_id,$contact_id, $party_id);
+			    }
+			    echo " Importing File {$file} => $party_id \n";
+			    $delete = false;
+			    $res = array();
+			    $csv = $this->CSVToArray($file, $delete);
+
+			    $total = count($csv);
+			    $list_user = array();
+			    $list_user_reset = array();
+			    foreach($csv as $line_number=>$data) {
+				    $location_party_id = isset($data['party_id']) ? $data['party_id'] : $party_id;
+				    if(!empty($location_party_id)) {
+				    	echo " PARTY {$location_party_id} | ";
+				    }
+				    $amc_id = null;
+				    $contact_id = null;
+				    $data['is_quote'] = trim($data['is_quote']) === "Y" || trim(strtoupper($data['is_quote'])) === "YES" ;
+				    if(isset($data['username']) && $data['username']!="") {
+						$username = trim($data['username']);
+						if(!isset($list_user[$username])) {
+							// find contact id
+							$q = "SELECT * FROM users where user_name=? LIMIT 1";
+							$list_user[$username] = $this->sqlSchema($schema, $q, array($username))->fetchObject();
+						}
+						$contact_id = $list_user[$username]->CONTACT_ID;
+						if(empty($contact_id)) {
+							echo " SKIP NO CONTACT {$username} \n";
+							continue;
+						} else {
+							echo "{$username} | ID {$contact_id} | ";
+						}
+
+					    if($reset_rules == "t" && !isset($list_user_reset[$username])) {
+						    $list_user_reset[$username] = true;
+						    $pricing = new AmcProductPricingRules();
+						    $this->_getDAO('AMCProductPricingRulesDAO')->ClearRulesForContact($contact_id, $location_party_id);
+						    $pricing->_createTopRule($amc_id,$contact_id, $location_party_id);
+					    }
+				    }
+
+				    echo "$line_number / $total | ". $data['product_name']." =>  ";
+
+				    $product_id = $pricing->_getProductId($data['product_name']);
+				    if(!$product_id) {
+				    	echo " NO PRODUCT ";
+				    } else {
+				    	echo " Product {$product_id} | ";
+				    }
+				    $product_pricing_rule_type_id = $pricing->_getProductPricingRuleType($data['product_name'], $data['state'], $data['county'], $data['zip']);
+				    $res = $pricing->createRule($data, $amc_id, $contact_id, $location_party_id);
+				    if($res && $product_id) {
+				    	echo " GOOD ";
+				    } else {
+				    	echo " BAD ";
+				    }
+				    echo "\n";
+
+			    }
+		    }
+	    }
+    }
+
+    public function testMe() {
+    	echo $this->getValue("hello","");
+    }
+
+    protected function getCmdVars() {
+	    $p = $this->argv[2];
+	    $res = array();
+	    if($p) {
+	    	$tmp = $this->argv;
+	    	foreach($tmp as $k=>$line) {
+	    		if($k<2) {
+	    			continue;
+			    }
+	    		$line = explode("=",$line,2);
+	    		$res[trim($line[0])] = trim($line[1]);
+		    }
+	    }
+	    return $res;
+    }
+
+    public function fixPricingExcelSheet() {
+    	$this->buildForm(array(
+    		$this->buildInput("pricing_file","Upload Pricing CSV","file")
+	    ));
+		echo "<pre>";
+	    $delete = true;
+	    $pricing_file = isset($_FILES['pricing_file']) ? $_FILES['pricing_file'] : null;
+	    if(!empty($this->argv)) {
+	    	$pricing_file['tmp_name'] = $this->argv[2];
+	    	echo " Importing File {$pricing_file['tmp_name']} \n";
+		    $delete = false;
+	    }
+	    if (!empty($pricing_file) && $pricing_file['tmp_name']!="") {
+		    $pricing_lines = array();
+		    $res = array();
+		    $csv = $this->CSVToArray($pricing_file['tmp_name'], $delete, true);
+		    $original_csv = $csv;
+		    $mark = array();
+		    $output = array(array("Product","State","County","Zip","Appraisal Fee","Quote"));
+		    foreach($csv as $key=>$pricing) {
+		    	if(isset($mark[$key])) {
+		    		continue;
+			    }
+		    	$product = $pricing['Product'];
+		    	$state = $pricing['State'];
+		    	$county = $pricing['County'];
+		    	$zip = $pricing['Zip'];
+		    	$appraisal_fee = $pricing['Appraisal Fee'];
+		    	$quote = $pricing['Quote'];
+			    if(!empty($this->argv)) {
+			    	echo " {$key} => {$product} \n";
+			    }
+
+			    if($state !="" && !isset($pricing_lines[$product]) ) {
+				    // State level
+				    $step = $this->_searchProductLines($csv, $key, "Product", $pricing, $mark);
+				    if($step == -1) {
+					    // not found, create one
+					    $res[] = array(
+						    "Product" => $product,
+						    "State" => "",
+						    "County"    => "",
+						    "Zip"   => "",
+						    "Appraisal Fee" => "",
+						    "Quote" => "Y"
+					    );
+				    } elseif($step >=0 ) {
+					    // found it
+					    $mark[$step] = true;
+					    $res[] = $csv[$step];
+				    }
+				    $pricing_lines[$product] = array();
+				    $output[] = array($product,"","","","","Y");
+			    }
+			    if($state !="" && $county!=""  && !isset($pricing_lines[$product][$state])) {
+				    // county level
+				    $step = $this->_searchProductLines($csv, $key, "State", $pricing, $mark);
+				    if($step == -1) {
+					    // not found, create one
+					    $res[] = array(
+						    "Product" => $product,
+						    "State" => $state,
+						    "County"    => "",
+						    "Zip"   => "",
+						    "Appraisal Fee" => "",
+						    "Quote" => "Y"
+					    );
+				    } elseif($step >=0 ) {
+					    // found it
+					    $mark[$step] = true;
+					    $res[] = $csv[$step];
+				    }
+				    $pricing_lines[$product][$state] = array();
+				    $output[] = array($product,$state,"","","","Y");
+			    }
+			    // search product line
+			    if($state !="" && $county!="" && $zip!="" && !isset($pricing_lines[$product][$state][$county])) {
+				    // zip level
+				    $step = $this->_searchProductLines($csv, $key, "County", $pricing, $mark);
+				    if($step == -1) {
+					    // not found, create one
+					    $res[] = array(
+						    "Product" => $product,
+						    "State" => $state,
+						    "County"    => $county,
+						    "Zip"   => "",
+						    "Appraisal Fee" => "",
+						    "Quote" => "Y"
+					    );
+				    } elseif($step >=0 ) {
+				    	// found it
+						$mark[$step] = true;
+						$res[] = $csv[$step];
+				    }
+				    $pricing_lines[$product][$state][$county] = array();
+				    $pricing_lines[$product][$state][$county][] = $zip;
+				    $output[] = array($product,$state,$county,"","","Y");
+			    }
+			    $mark[$key] = true;
+			    $res[] = $pricing;
+			    $output[] = array($product,$state,$county,$zip,$appraisal_fee,$quote);
+		    } // end loop csv
+
+
+
+		    $fp = fopen('/var/www/tandem.inhouse-solutions.com/logs/output_kb.csv', 'w+');
+		    foreach ($output as $fields) {
+			    fputcsv($fp, $fields);
+		    }
+
+		    fclose($fp);
+
+	    } // end file
+	    echo "</pre>";
+
+    }
+
+    private function _searchProductLines($original_csv, $key, $search_type, $pricing, array $mark) {
+	    foreach($original_csv as $step=>$search) {
+		    if($step!=$key && !isset($mark[$step])) {
+			    if( $search['Product'] == $pricing['Product'] && $search_type == "Product" &&
+			        $search['State']=="" && $search['County'] == "" && $search['Zip'] == "" ) {
+				    // found product line
+					return $step;
+			    }
+			    // search state
+			    if( $search['Product'] == $pricing['Product'] && $search['State'] == $pricing['State']  && $search_type == "State"
+			         && $search['County'] == "" && $search['Zip'] == "" ) {
+				    // found product line
+				    if(isset($mark[$step])) {
+					    return -2;
+				    }
+				    return $step;
+			    }
+			    // search county
+			    if( $search['Product'] == $pricing['Product'] && $search['State'] == $pricing['State']  && $search['County'] == $pricing['County']  && $search_type == "County"
+			        && $search['Zip'] == "" ) {
+				    // found product line
+				    return $step;
+			    }
+		    }
+	    }
+	    return -1;
+    }
+
+    public function searchUsers() {
+    	$username = $this->getValue("username","");
+    	$email = $this->getValue("email","");
+    	$roles = $this->getValue("roles","");
+	    $user_types = $this->getValue("user_type","");
+	    $schemas = $this->getAllSchema();
+	    $schema_data = array("all" => "All Schema");
+	    foreach($schemas as $schema=>$connection) {
+		    $schema_data[$schema] = $schema;
+	    }
+    	$this->buildForm(array(
+    		$this->buildInput("username","Username","text", $username),
+		    $this->buildInput("email","or Email","text", $email),
+		    $this->buildInput("user_type","or User Types (,) ","select", $this->buildSelectOptionFromDAO("UserTypesDAO")),
+		    $this->buildInput("roles","or Roles ID (,)","select", $this->buildSelectOptionFromDAO("RoleTypesDAO")),
+		    $this->buildInput("in_schema","in Schema","select", $this->buildSelectOption($schema_data)),
+	    ));
+	    $in_schema = $this->getValue("in_schema","all");
+
+    	if($username!="" || $email!= "" || $roles!="" || $user_types !="") {
+    		// start
+		    $res = array();
+		    foreach($this->getAllSchema() as $schema=>$connection) {
+		    	if($in_schema!="all" && $in_schema!=$schema) {
+		    		continue;
+			    }
+		    	$where  = "";
+			    $where2  = "";
+		    	if($username!="") {
+		    		$where.= " AND U.user_name='".$username."' ";
+			    }
+			    if($email!="") {
+				    $where.= " AND C.contact_email like '%".$email."%' ";
+			    }
+
+			    if($roles!="") {
+				    $where2.= " AND TMP.roles_name like '%[{$roles}]%'";
+			    }
+
+			    if($user_types!="") {
+				    $where.= " AND U.user_type IN ({$user_types}) ";
+			    }
+
+		    	$sql = "SELECT *
+						FROM (
+							SELECT U.user_id, U.contact_id, U.user_name, C.contact_email, C.first_name, C.last_name, UT.user_type_name, 
+							array_to_string(array_agg(rt.role_name || '[' || ur.role_id || ']')::text[],', ') as roles_name,
+							'{$schema}' as site
+							 FROM users as U
+							INNER JOIN contacts as C on U.contact_id = C.contact_id
+							INNER JOIN users_roles as UR ON U.user_id = UR.user_id
+							INNER JOIN commondata.role_types as RT ON RT.role_type_id =UR.role_id
+							INNER JOIN commondata.user_types as UT ON UT.user_type_id = U.user_type
+							
+							WHERE 1 > 0
+							{$where}
+							GROUP BY u.user_id, U.contact_id, U.user_name, C.contact_email, C.first_name, C.last_name, UT.user_type_name	
+						) AS TMP
+						WHERE 1 > 0
+						{$where2}				
+					";
+				$rows = $this->sqlSchema($schema, $sql)->getRows();
+
+				foreach($rows as $row) {
+					if(!isset($res[$row['user_name']])) {
+						$res[$row['user_name']] = $row;
+						$res[$row['user_name']]['site'] = "";
+					}
+					$res[$row['user_name']]['site'] .= $row['site']." ";
+
+				}
+
+
+		    }
+		    $this->buildJSTable($this->_getDAO("UsersDAO"), $res, array("viewOnly"=>true ,"excel" => true));
+	    }
 
     }
 
@@ -141,12 +482,15 @@ class specials_AdminSupport extends specials_baseSpecials
 	    $schemas = $this->getAllSchema();
 	    foreach($schemas as $schema=>$connection) {
 		    echo $schema."<br>";
+		    if($schema == "schoolsfirstfcu" || $schema=="inhousesolutions1") {
+		    	continue;
+		    }
 		    $sql = "SELECT * 
 			FROM appraisal_status_history AS ASH
 			LEFT JOIN appraisal_status_updated_jobs AS Job ON (JOB.appraisal_status_history_id = ASH.appraisal_status_history_id )
 			where ASH.updated_flag IS FALSE 
 			AND ASH.status_type_id=9
-			AND ASH.status_date > '2017-11-17 18:00:00' 
+			AND ASH.status_date > '2017-11-26 18:00:00' 
 			ORDER BY Job.appraisal_id DESC ";
 		    $jobs = $this->sqlSchema($schema,$sql)->GetRows();
 		    foreach($jobs as $job) {
@@ -339,21 +683,8 @@ class specials_AdminSupport extends specials_baseSpecials
             $this->buildInput("occupancy_ids","Enable for Occupancy IDs (,)","text"),
         ));
 
-        $sql = "SELECT * FROM loan_types where enabled_flag is true";
-        $this->buildJSTable($this->_getDAO("AppraisalsDAO"), $this->query($sql)->GetRows(), array(
-        	"viewOnly" => true
-        ));
-	    $sql = "SELECT * FROM property_types where enabled_flag is true";
-	    $this->buildJSTable($this->_getDAO("AppraisalsDAO"), $this->query($sql)->GetRows(), array(
-		    "viewOnly" => true
-	    ));
 
-	    $sql = "SELECT * FROM occupancy_types where enabled_flag is true";
-	    $this->buildJSTable($this->_getDAO("AppraisalsDAO"), $this->query($sql)->GetRows(), array(
-		    "viewOnly" => true
-	    ));
-
-        $appraisal_product_id = $this->getValue("appraisal_product_id","");
+	    $appraisal_product_id = $this->getValue("appraisal_product_id","");
         $loan_ids = $this->getValue("loan_ids","");
         $property_type_ids = $this->getValue("property_type_ids","");
         $occupancy_ids = $this->getValue("occupancy_ids","");
@@ -408,6 +739,24 @@ class specials_AdminSupport extends specials_baseSpecials
             echo "DONE";
         }
 
+	    $sql = "SELECT * FROM loan_types where enabled_flag is true";
+	    $this->buildJSTable($this->_getDAO("AppraisalsDAO"), $this->query($sql)->GetRows(), array(
+		    "viewOnly" => true
+	    ));
+	    $sql = "SELECT * FROM property_types where enabled_flag is true";
+	    $this->buildJSTable($this->_getDAO("AppraisalsDAO"), $this->query($sql)->GetRows(), array(
+		    "viewOnly" => true
+	    ));
+
+	    $sql = "SELECT * FROM occupancy_types where enabled_flag is true";
+	    $this->buildJSTable($this->_getDAO("AppraisalsDAO"), $this->query($sql)->GetRows(), array(
+		    "viewOnly" => true
+	    ));
+
+	    $this->buildJSTable($this->_getDAO("AppraisalProductsDAO"),$this->_getDAO("AppraisalProductsDAO")->Execute("select appraisal_product_id, appraisal_product_name from appraisal_products where enabled_flag=false order by appraisal_product_id DESC ")->GetRows(), array("viewOnly"=>true , "excel"=>true));
+
+
+
     }
 	var $connections = array();
     public function getAllSchema() {
@@ -433,6 +782,11 @@ class specials_AdminSupport extends specials_baseSpecials
 		    }
 	    }
 	    return $this->connections;
+    }
+
+    public function getConnection($sql_user) {
+    	$this->getAllSchema();
+    	return $this->connections[$sql_user]['connection'];
     }
 
     public function sqlSchema($schema , $sql, $data = array()) {
@@ -545,7 +899,7 @@ class specials_AdminSupport extends specials_baseSpecials
 
     }
 
-    public function CSVToArray($csv_file, $delete = true) {
+    public function CSVToArray($csv_file, $delete = true, $original = false) {
         $csv = new CSVFile($csv_file);
         $res = array();
         foreach ($csv as $row) {
@@ -553,7 +907,10 @@ class specials_AdminSupport extends specials_baseSpecials
             if (!is_array($row)) {
                 continue;
             }
-
+			if($original === true) {
+				$res[] = $row;
+				continue;
+			}
             foreach ($row as $key => $value) {
                 $key = strtolower(str_replace(' ', '_', trim($key)));
                 if (trim($key) == "") {
@@ -585,7 +942,9 @@ class specials_AdminSupport extends specials_baseSpecials
             $res[] = $tmp_user;
 
         }
-        @unlink($csv_file);
+        if($delete) {
+	        @unlink($csv_file);
+        }
         return $res;
     }
 
@@ -1242,9 +1601,9 @@ class specials_AdminSupport extends specials_baseSpecials
     }
 
     public function engine() {
-        $distance = $this->calcDistance('40.5218','-88.9676',
-            '40.47467', '-88.94436');
-        echo $distance;
+        $distance = $this->calcDistance('42.1383','-87.9118',
+            '41.9517183', '-87.6770275');
+        echo "x=> ".$distance."<br>";
         if($distance < 40 ) {
             echo " GO TIT ";
         }
@@ -1774,6 +2133,16 @@ class specials_AdminSupport extends specials_baseSpecials
         }
     }
 
+    public function search_users_by_roles() {
+
+	    $this->buildForm(array(
+		    $this->buildInput("roles","Roles (,)","text"),
+	    ));
+
+
+
+    }
+
     public function update_user_global() {
         $path = "/var/www/tandem.inhouse-solutions.com/scripts";
         $file_input = $path."/internal_user.csv";
@@ -1794,6 +2163,9 @@ class specials_AdminSupport extends specials_baseSpecials
             $this->buildInput("mass_users_file","Mass CSV File Users","file"),
 	        $this->buildInput("mass_change_password","Mass CSV File Change Password","file"),
         ));
+
+
+
         $username = $this->getValue("username","");
         $first_name = $this->getValue("first_name","");
         $last_name = $this->getValue("last_name","");
@@ -1867,6 +2239,7 @@ class specials_AdminSupport extends specials_baseSpecials
         } else {
             echo "Please enter user information";
         }
+
         $this->quick_view(true, true);
 
     }
@@ -2141,6 +2514,7 @@ class specials_AdminSupport extends specials_baseSpecials
             $data = $this->query($sql, array($appraisal_id))->GetRows();
             $this->buildJSTable($this->_getDAO("OrderFulfilledEventsAppraisalProductsDAO"),$data);
 
+	        $this->buildJSTable($this->_getDAO("AppraisalProductsDAO"),$this->_getDAO("AppraisalProductsDAO")->Execute("select appraisal_product_id, appraisal_product_name from appraisal_products where enabled_flag=true")->GetRows(), array("viewOnly"=>true , "excel"=>true));
 
         }
     }
@@ -2423,6 +2797,9 @@ class specials_AdminSupport extends specials_baseSpecials
     }
 
     public function buildForm($data = array(), $options = array()) {
+    	if(!empty($this->argv)) {
+    		return;
+	    }
         $action = isset($options['action']) ? $options['action'] : $_GET['action'];
         $confirm = isset($options['confirm']) ?  "confirm('Are you sure?')" : "true";
         $html = "<form action='?action={$action}' method=post enctype='multipart/form-data' onsubmit=\"return {$confirm};\" ><table >";
@@ -2496,13 +2873,16 @@ class specials_AdminSupport extends specials_baseSpecials
         $ids = 0;
         $special_update = "";
         $cols=array();
-
+		$excel = array();
+		$excel_header = array();
+		$excel_data = array();
         foreach ($data as $row) {
             $tmp++;
             $color = $tmp % 2 == 0 ? "green" : "pink";
             $tbody .= "<tr class='bh_{$color}'>";
             $row_id = "";
             $c=0;
+            $excel_row = array();
             foreach($row as $col=>$value) {
 	            $c++;
                 if($tmp == 1) {
@@ -2513,6 +2893,7 @@ class specials_AdminSupport extends specials_baseSpecials
 	                }
 
                     $header .= "<th data-name='{$col}'>{$col}</th>";
+	                $excel_header[] = $col;
                 }
                 $ids++;
 
@@ -2551,7 +2932,7 @@ class specials_AdminSupport extends specials_baseSpecials
 	                	$tbody .= "<td> $log_result </td>";
 	                }
                 }
-
+	            $excel_row[] = $value;
                 $tbody .= "<td data-primary-value='{$row_id}' data-table='{$table}' data-primary-key='{$primary_key}' data-name='{$col}' style='{$width}'>                                
                               ";
                 if($col == "appraisal_id") {
@@ -2572,6 +2953,7 @@ class specials_AdminSupport extends specials_baseSpecials
                 $tbody .= "
                            </td>";
             }
+            $excel_data[] = $excel_row;
             $tbody .="
                 <td  data-primary-value='{$row_id}' data-primary-key='{$primary_key}'  data-table='{$table}' >                    
                     ";
@@ -2584,6 +2966,7 @@ class specials_AdminSupport extends specials_baseSpecials
                 </td>
             </tr>";
         }
+
         $data_sql_id = "sql".rand(1000,9999).rand(1000,9999);
         $sql_table = "<textarea id={$data_sql_id} data-sql='1' style=width:100%;height:50px; ></textarea><br>
                             <button data-sql='$data_sql_id' data-table='$table' onclick='run_custom_sql(this);'>Run SQL</button> 
@@ -2594,10 +2977,23 @@ class specials_AdminSupport extends specials_baseSpecials
             $sql_table = "";
         }
         $table = $sql_table."<table class=table width='100%'><thead>{$header}<th></th></thead><tbody>{$tbody}</tbody></table>";
+
+        if(isset($options['excel'])) {
+        	$excel[] = $excel_header;
+        	foreach($excel_data as $line) {
+        		$excel[] = $line;
+	        }
+	        $table = " <form method='post'>	<input type='submit' value='Export To Excel'> <textarea name='json_excel' style='position: absolute;left:-1000px;top:-1000px;'>".json_encode($excel)."</textarea></form><br>".$table;
+        }
+
+
         echo $table;
     }
 
     public function getValue($name, $default = "", $data = array()) {
+    	if(empty($data) && isset($this->argv[2])) {
+    		$data = $this->getCmdVars();
+	    }
         if(!is_array($name)) {
             $name_list = array($name);
         } else {
@@ -3084,7 +3480,9 @@ $(function() {
                   <!-- <li><a href="?action=login_as_user">Login as User</a></li> -->      
                  <li role="separator" class="divider"></li>   
                 <li><a href="?action=mass_create_appraisers">Mass Create Appraisers</a></li>    
-                <li><a href="?action=mass_sending_email">Mass Sending Emails</a></li>                        
+                <li><a href="?action=mass_sending_email">Mass Sending Emails</a></li>               
+                <li><a href="?action=searchUsers">Search & Export Users</a></li>
+                         
               </ul>
         </li>
        
@@ -3621,4 +4019,36 @@ class NiceSSH {
 	public function __destruct() {
 		$this->disconnect();
 	}
+}
+
+if(isset($argv)) {
+	// command line
+	$class = new specials_AdminSupport();
+	$function = $argv[1];
+	$class->argv = $argv;
+	$class->$function();
+}
+
+
+if(isset($_POST['json_excel'])) {
+	$filename = "export.".@date("U").".csv";
+
+	header("Content-type: text/csv");
+	header("Content-Disposition: attachment; filename=".$filename);
+	header("Pragma: no-cache");
+	header("Expires: 0");
+
+	$_POST['json_excel'] = json_decode($_POST['json_excel'],true);
+
+	$class = new specials_AdminSupport();
+	$fp = fopen('/tmp/excel.tmp', 'w+');
+
+	foreach ($_POST['json_excel'] as $fields) {
+		fputcsv($fp, $fields);
+	}
+
+	fclose($fp);
+	echo file_get_contents('/tmp/excel.tmp');
+	exit;
+
 }
