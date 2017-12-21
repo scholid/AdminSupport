@@ -1747,15 +1747,20 @@ class specials_AdminSupport extends specials_baseSpecials
          */
 
         $this->buildForm(array(
-            $this->buildInput("appraisal_id","Appraisal IDS (,)","text")
+            $this->buildInput("appraisal_id","Appraisal IDS (,) or breakline","textarea")
         ));
         $appraisal_id = $this->getValue("appraisal_id");
         if($appraisal_id!="") {
             $list = explode(",",$appraisal_id);
+			if(count($list) <= 1) {
+				$list = explode("\n",$appraisal_id);
+			}
             echo " Press CTRL + S to save all files";
             foreach($list as $appraisal_id) {
                 $appraisal_id=trim($appraisal_id);
-                echo " <a href='/tandem/download-invoice/?type=a&appraisal_id={$appraisal_id}&filename=/Invoice_{$appraisal_id}.pdf'  title='Invoice_{$appraisal_id}.pdf' >Invoice_{$appraisal_id}.pdf</a> ";
+                if($appraisal_id!="") {
+                    echo " <a href='/tandem/download-invoice/?type=a&appraisal_id={$appraisal_id}&filename=/Invoice_{$appraisal_id}.pdf'  title='Invoice_{$appraisal_id}.pdf' >Invoice_{$appraisal_id}.pdf</a> ";
+                }
             }
 
         }
