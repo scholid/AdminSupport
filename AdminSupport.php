@@ -40,7 +40,7 @@ class specials_AdminSupport extends specials_baseSpecials
 
     public function buildBody()
     {
-        $action = isset($_GET['action']) ? $_GET['action'] : "";
+	    $action = isset($_GET['action']) ? $_GET['action'] : "";
         switch ($action) {
 	        case "deploy":
 	        	$this->deploy();
@@ -141,8 +141,59 @@ class specials_AdminSupport extends specials_baseSpecials
 			// importManageLocationPricing
 	        // fixPricingExcelSheet
 	        // testMe
+	            //
+
+
         }
 
+    }
+
+    public function fixConditionEmail() {
+
+
+    	foreach ($this->getAllSchema() as $schema=>$connection) {
+    		if($schema == "wintrustmortgage") {
+
+		    }
+		    $sql = "SELECT * FROM
+					appraisal_status_history AS ASH
+					where ASH.updated_flag=false
+					AND ASH.status_type_id=10
+					AND ASH.status_date > '2017-11-12'";
+		    $appraisals = $this->sqlSchema($schema, $sql)->getRows();
+		    foreach($appraisals as $ash) {
+			    $appraisal_id = $ash['appraisal_id'];
+			    echo "$schema | $appraisal_id | ";
+			    $sql = "SELECT COUNT(NJA.notification_job_id) as TOTAL FROM
+						notification_jobs_appraisals AS NJA
+						INNER JOIN notification_jobs as NJ ON NJA.notification_job_id = NJ.notification_job_id
+						WHERE NJA.appraisal_id=? 
+						AND NJ.subject like 'Condition Status Update%'
+						AND NJ.last_attempted_timestamp >=?		
+						LIMIT 1				
+						";
+			    $jobs = $this->sqlSchema($schema,$sql, array($appraisal_id, $ash['status_date']))->fetchObject();
+			    if($jobs->TOTAL > 0) {
+				    echo " SENT ALREADY ";
+			    } else {
+				    echo " MISSING NOTIFICATION ";
+				    $sql = "SELECT * FROM condition_notification_queue 
+							where appraisal_id=?
+							and conditions_id IS NOT NULL
+							ORDER BY condition_notification_queue_id DESC
+							LIMIT 1";
+				    $condition = $this->sqlSchema($schema, $sql, array($appraisal_id))->FetchObject();
+				    if($condition->CONDITIONS_ID > 0) {
+				    	echo " | <B>RE-SEND NOW</B> ";
+				    	$sql = "UPDATE condition_notification_queue SET is_sent_flag=false WHERE conditions_id=? and appraisal_id=? ";
+				    	$this->sqlSchema($schema, $sql, array($condition->CONDITIONS_ID, $appraisal_id));
+				    }  else {
+				    	echo " | COULD NOT RESEND";
+				    }
+			    }
+			    echo "<br>";
+		    }
+	    }
     }
 
     var $temp_pricing = array();
@@ -697,7 +748,7 @@ class specials_AdminSupport extends specials_baseSpecials
                     $loan_type_id = (Int)trim($loan_type_id);
                     try {
                         $sql = "INSERT INTO appraisal_products_loan_type_mapping (appraisal_product_id, loan_type_id, enabled_flag) VALUES($appraisal_product_id,$loan_type_id, true)";
-                        $this->Execute($sql);
+                        $this->query($sql);
                         echo " LOAN {$loan_type_id} <br>";
                     } catch (Exception $e) {
                         echo $sql."; <br>";
@@ -710,7 +761,7 @@ class specials_AdminSupport extends specials_baseSpecials
                     $id = (Int)trim($id);
                     try {
                         $sql = "INSERT INTO appraisal_products_property_type_mapping (appraisal_product_id, property_type_id, enabled_flag) VALUES($appraisal_product_id,$id, true)";
-                        $this->Execute($sql);
+                        $this->query($sql);
                         echo " Property {$id} <br>";
                     } catch (Exception $e) {
                         echo $sql.";<br>";
@@ -727,7 +778,7 @@ class specials_AdminSupport extends specials_baseSpecials
                             $id2 = (Int)trim($id2);
                             try {
                                 $sql = "INSERT INTO appraisal_products_property_occupancy_type_mapping (appraisal_product_id, property_type_id, occupancy_type_id, enabled_flag) VALUES($appraisal_product_id,$id2,$id, true)";
-                                $this->Execute($sql);
+                                $this->query($sql);
                                 echo " Occu {$id}/{$id2} <br> ";
                             } catch (Exception $e) {
                                 echo $sql."; <br>";
@@ -1601,13 +1652,8 @@ class specials_AdminSupport extends specials_baseSpecials
     }
 
     public function engine() {
-        $distance = $this->calcDistance('42.1383','-87.9118',
-            '41.9517183', '-87.6770275');
-        echo "x=> ".$distance."<br>";
-        if($distance < 40 ) {
-            echo " GO TIT ";
-        }
-
+	   $x = preg_replace('/[^\d\.]/', '', "$4.21548");
+		echo $x;
 
     }
 
@@ -3217,6 +3263,126 @@ class specials_AdminSupport extends specials_baseSpecials
         echo $pdf;
     }
 
+	public function menu_tools_utils_fix_appraiser_null_geo() {
+		$this->buildForm(array(
+			$this->buildInput("menu_action","Select Action", "select", $this->buildSelectOption(array(
+				0 => "---Select Action---",
+				1 => "Fix Issue with Appraisers GEO"
+			)))
+		));
+		$menu = $this->getValue("menu_action",0);
+
+		if($menu == 1) {
+			$sql  = "SELECT * FROM contact_addresses where geo_type='radius' and latitude is NULL ";
+			$rows = $this->query( $sql )->GetRows();
+			foreach($rows as $row) {
+				$contact_address_id = $row['contact_address_id'];
+				$GeoCodeService = new GeoCodeService();
+				$res = $GeoCodeService->GetGeo($row['address1']." ".$row['city']." ".$row['state']." ".$row['zipcode']);
+				if(!empty($res->LONGITUDE)) {
+					$new_std = new stdClass();
+					$new_std->CONTACT_ADDRESS_ID = $contact_address_id;
+					$new_std->LONGITUDE = $res->LONGITUDE;
+					$new_std->LATITUDE = $res->LATITUDE;
+					$this->_getDAO("ContactAddressesDAO")->update($new_std);
+				} else {
+					echo " ADDRESS {$contact_address_id} IS BAD GEO <br>";
+				}
+
+			}
+		}
+		$sql  = "SELECT * FROM contact_addresses where geo_type='radius' and latitude is NULL ";
+		$rows = $this->query( $sql )->GetRows();
+		$this->buildJSTable($this->_getDAO("ContactAddressesDAO"), $rows, array(
+			"viewOnly" => true
+		));
+
+	}
+
+    public function menu_tools_utils_clean_duplicated_addresses() {
+    	try {
+		    $sql  = "SELECT * FROM contact_addresses ";
+		    $rows = $this->query( $sql )->GetRows();
+		    $ex = array();
+		    foreach ( $rows as $row ) {
+		    	//echo "{$row['contact_id']} ";
+			    if(isset($ex[$row['contact_address_id']])) {
+			    	continue;
+			    }
+			    $data = array(
+				    $row['contact_id'],
+				    $row['contact_address_id']
+			    );
+			    $extra_where = "";
+			    switch ($row['geo_type']) {
+				    case "county":
+					    $extra_where .= " AND state=? AND county_name=? ";
+						$data[] = $row['state'];
+					    $data[] = $row['county_name'];
+			            break;
+
+			    }
+			    if($extra_where == "") {
+			    	continue;
+			    }
+			    $sql = "SELECT * FROM contact_addresses
+					WHERE contact_id=?				  
+					AND contact_address_id > ?
+					{$extra_where} ";
+			    $r   = $this->query( $sql, $data)->GetRows();
+			  //  echo "  | {$row['contact_address_id']} | Found: ".count($r);
+			    foreach ( $r as $line ) {
+				    $sql = "DELETE FROM contact_addresses WHERE contact_address_id=? ";
+				    $this->query( $sql, array( $line['contact_address_id'] ) );
+				    $ex[$line['contact_address_id']] = true;
+			    }
+			 //   echo " <br>";
+		    }
+		    echo "DONE";
+	    } catch(Exception $e) {
+    		echo "<pre>";
+    		print_r($e);
+    		echo "</pre>";
+	    }
+
+
+    }
+
+    public function buildAdminMenu($name, $return=true) {
+		$methods = get_class_methods($this);
+		$groups = array();
+		foreach($methods as $method) {
+			$tmp = explode("_",$method,4);
+			if($tmp[0] === "menu" && count($tmp) === 4 && $tmp[1] === $name) {
+				// menu structure
+				$group = $tmp[2];
+				$groups[$group][] = array(
+					"name" => trim(ucwords(str_replace("_", " ",$tmp[3]))),
+					"action"     => $method
+				);
+			}
+		}
+
+		$html = '';
+
+		$dem=0;
+		foreach($groups as $group=>$data) {
+			foreach($data as $menu) {
+				$html .= '<li><a href="?action='.$menu['action'].'">'.$menu['name'].'</a></li>';
+			}
+			$dem++;
+			if($dem < count($groups)) {
+				$html.= '<li role="separator" class="divider"></li>  ';
+			}
+		}
+
+		if(!$return) {
+			echo $html;
+		} else {
+			return $html;
+		}
+    }
+
 
     function json_output() {
         // JSON as Text
@@ -3462,14 +3628,15 @@ $(function() {
             <li><a href="?action=engine">Engine Checking</a></li>
         <li role="separator" class="divider"></li>   
           <li><a href="?action=mass_create_note">Mass Create Note</a></li>
-                      
+                      '.$this->buildAdminMenu("appraisals").'
           </ul>
         </li>
               
         <li class="dropdown"><a href="#"  class="dropdown-toggle" data-toggle="dropdown" role="button" aria-haspopup="true" aria-expanded="false">Workflows <span class="caret"></span></a>
                <ul class="dropdown-menu">
                     <li><a href="?action=workflows">Workflows</a></li>
-                    <li><a href="?action=appraisal_workflows_history">Appraisal Workflows History</a></li>           
+                    <li><a href="?action=appraisal_workflows_history">Appraisal Workflows History</a></li>
+                    '.$this->buildAdminMenu("workflows").'           
               </ul>
         </li>
         <li class="dropdown"><a href="#"  class="dropdown-toggle" data-toggle="dropdown" role="button" aria-haspopup="true" aria-expanded="false">User Account <span class="caret"></span></a>
@@ -3482,11 +3649,11 @@ $(function() {
                 <li><a href="?action=mass_create_appraisers">Mass Create Appraisers</a></li>    
                 <li><a href="?action=mass_sending_email">Mass Sending Emails</a></li>               
                 <li><a href="?action=searchUsers">Search & Export Users</a></li>
-                         
+                 '.$this->buildAdminMenu("users").'
               </ul>
         </li>
        
-    <li class="dropdown">
+    	<li class="dropdown">
           <a href="#" class="dropdown-toggle" data-toggle="dropdown" role="button" aria-haspopup="true" aria-expanded="false">Settings <span class="caret"></span></a>
           <ul class="dropdown-menu">
             <li><a href="?action=change_location_parent">Change Location Parents</a></li>
@@ -3494,7 +3661,13 @@ $(function() {
             <li role="separator" class="divider"></li>
             <li><a href="?action=enable_products">Enable Products</a></li>
             <li><a href="?action=generateInvoice">Mass Gen Invoices</a></li>
-                          
+          '.$this->buildAdminMenu("settings").'                
+          </ul>
+        </li>   
+        <li class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown" role="button" aria-haspopup="true" aria-expanded="false">Tools & Utils <span class="caret"></span></a>
+          <ul class="dropdown-menu">            
+          	'.$this->buildAdminMenu("tools").'                
           </ul>
         </li>        
       </ul>
@@ -4052,3 +4225,6 @@ if(isset($_POST['json_excel'])) {
 	exit;
 
 }
+/*
+ * END FILE
+ */
