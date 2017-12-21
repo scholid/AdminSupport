@@ -1,4 +1,11 @@
 <?php
+/*
+install command as webdocs user
+
+wget https://raw.githubusercontent.com/khoaofgod/AdminSupport/master/AdminSupport.php -O /var/www/tandem.inhouse-solutions.com/includes/pages/specials/AdminSupport.php
+wget https://raw.githubusercontent.com/khoaofgod/AdminSupport/master/blankFile.txt -O /var/www/tandem.inhouse-solutions.com/scripts/internal_user.csv
+
+ */
 ini_set('include_path','.:../includes/:../includes/libs/:/usr/share/pear/:/var/www/tandem.inhouse-solutions.com/includes/:/var/www/tandem.inhouse-solutions.com/includes/libs/');
 ini_set('display_errors', 1);
 ini_set('display_startup_errors', 1);
