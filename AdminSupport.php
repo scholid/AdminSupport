@@ -2001,7 +2001,7 @@ class specials_AdminSupport extends specials_baseSpecials
         }
     }
 
-    public function login_as_user() {
+    public function menu_tools_users_change_user_password() {
         $user_name = $this->getValue("user_name","");
         $this->buildForm(array(
             $this->buildInput("user_name","Enter Username","text")
