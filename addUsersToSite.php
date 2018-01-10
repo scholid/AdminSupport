@@ -118,7 +118,7 @@ class InHouseUser {
     public function createUsers($Users = array(), $file_input) {
     	$tmp = explode(".",$file_input);
 	    $ext = strtolower(end($tmp));
-	    if($ext == "csv" && file_exists($file_input)) {
+	    if($ext == "csv" && file_exists($file_input) && filesize($file_input) > 0) {
 	    	$Users = array();
 	    	$csv = new CSVFile($file_input);
 		    foreach($csv as $user) {
