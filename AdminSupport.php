@@ -2004,7 +2004,20 @@ class specials_AdminSupport extends specials_baseSpecials
         }
     }
 
-    public function menu_tools_users_change_user_password() {
+    public function menu_tools_api_api_testing() {
+    	$sql = "SELECT * FROM web_services_users";
+    	echo "
+    	API Document: <a href='https://wiki.inhouseusa.com:8444/display/QA/Connexions+API+Testing' target=_blank >https://wiki.inhouseusa.com:8444/display/QA/Connexions+API+Testing</a><br>
+    	Link to test: https://{$_SERVER['HTTP_HOST']}/tandem/services/connexionsapi/?login=NAS&token=&method=getAppraisalOrders
+    	<br>
+    	";
+    	$rows = $this->query($sql)->getRows();
+    	$this->buildJSTable($this->_getDAO("WebServicesUsersDAO"),$rows, array(
+    		"viewOnly" => true
+	    ));
+    }
+
+    public function menu_users_users_change_user_password() {
         $user_name = $this->getValue("user_name","");
         $this->buildForm(array(
             $this->buildInput("user_name","Enter Username","text")
