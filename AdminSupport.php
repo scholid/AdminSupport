@@ -1097,6 +1097,29 @@ class specials_AdminSupport extends specials_baseSpecials
 	        $this->buildInput("mass_broker_company", "CSV Mass Broker Company", "file"),
         ));
 
+        echo "Appraisers Template Columns: <br>
+		<b>Column Name ( string, yes/no )</b><br>
+		+ username ( required )<br>
+		+ first_name , last_name, contact_email, time_zone, 
+		company_name, address1, city, state, zipcode, office_phone, cell_phone<br>
+		
+		+ panel_assigned, panel_weight, panel_location, panel_preferred<br>
+		+ fha (yes|no), license_state, license_level, license_exp, license_number<br>
+		+ insurance_carrier, insurance_policy, insurance_exp, insurance_limit_total<br> 
+		+ monthly_maximum, assignment_threshold, enable_manual_assignment<br>
+		
+		+ roles ( 10 = appraiser; 12 = company owner ; or both 10,12)<br>
+		+ locations ( location name, just use top node Name , multiple location by A||B )<br>
+		+ class ( AppraiserUser , always required ) 
+		<br><br>
+		<hr>
+		Appraiser Geo Data Template<br>
+		+ username ( required )<br>
+		+ class ( AppraiserUser ,  required ) 
+		+ location ( string, as only county name support now )
+		+ type ( = 'county' for now )
+        ";
+
         $mass_broker_company = isset($_FILES['mass_broker_company']) ? $_FILES['mass_broker_company'] : null;
 	    if (!empty($mass_broker_company) && $mass_broker_company['tmp_name']!="") {
 		    $companies   = $this->CSVToArray( $mass_broker_company['tmp_name']);
@@ -1330,7 +1353,11 @@ class specials_AdminSupport extends specials_baseSpecials
 	                if(!empty($location_ids)) {
 		                $data_string = $this->getJSONNumberFromArray($location_ids);
 		                $p1='{"contact_id":'.$contact_id.',"data":[{"section":"locations","data":{"selected_options":['.$data_string.']}}]}';
-		                $this->jsonResult($Appraiser->saveData($p1));
+		                if($data_string!="") {
+		                	echo "Locations IDS";
+			                $this->jsonResult($Appraiser->saveData($p1));
+		                }
+
 	                }
 	                if($company_name!="") {
 	                    // locate company name
