@@ -1115,9 +1115,9 @@ class specials_AdminSupport extends specials_baseSpecials
 		<hr>
 		Appraiser Geo Data Template<br>
 		+ username ( required )<br>
-		+ class ( AppraiserUser ,  required ) 
-		+ location ( string, as only county name support now )
-		+ type ( = 'county' for now )
+		+ class ( AppraiserUser ,  required ) <br>
+		+ location ( string, as only county name support now )<br>
+		+ type ( = 'county' for now )<br>
         ";
 
         $mass_broker_company = isset($_FILES['mass_broker_company']) ? $_FILES['mass_broker_company'] : null;
