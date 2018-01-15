@@ -1431,6 +1431,7 @@ class specials_AdminSupport extends specials_baseSpecials
 	                               }                                                                         
 	                            ]
 	                        }';
+	                    echo " {$license_exp} ";
 	                    $this->jsonResult($Appraiser->saveData($p1));
 	                }
 
