@@ -1441,6 +1441,7 @@ class specials_AdminSupport extends specials_baseSpecials
 	                            {"section":"licenses",
 	                                    "data":{ 
 	                                                    "state":"'.$license_state.'",
+	                                                    "license_number":"'.$license_number.'",
 	                                                    "fha_approved_flag":'.$fha.'
 	                                                  }
 	                               }                                                                         
@@ -1456,7 +1457,8 @@ class specials_AdminSupport extends specials_baseSpecials
 	                        "data":[
 	                            {"section":"licenses",
 	                                    "data":{ 
-	                                                    "state":"'.$license_state.'",	                                               
+	                                                    "state":"'.$license_state.'",	  
+	                                                    "license_number":"'.$license_number.'",                                             
 	                                                    "appraiser_license_types_id":"'.$license_level.'"
 	                                                   }
 	                               }                                                                         
@@ -1471,7 +1473,8 @@ class specials_AdminSupport extends specials_baseSpecials
 	                        "data":[
 	                            {"section":"licenses",
 	                                    "data":{ 
-	                                                    "state":"'.$license_state.'",	                                                
+	                                                    "state":"'.$license_state.'",	 
+	                                                    "license_number":"'.$license_number.'",                                               
 	                                                    "license_exp_dt":"'.$license_exp.'"}
 	                               }                                                                         
 	                            ]
@@ -1479,22 +1482,6 @@ class specials_AdminSupport extends specials_baseSpecials
 							echo " {$license_exp }";
 			                $this->jsonResult($Appraiser->saveData($p1));
 		                }
-
-		                if($license_number!="") {
-			                $p1 = '{"contact_id":'.$contact_id.',
-	                        "data":[
-	                            {"section":"licenses",
-	                                    "data":{ 
-	                                                    "state":"'.$license_state.'",	                                                 
-	                                                    "license_number":"'.$license_number.'"
-	                                                  }
-	                               }                                                                         
-	                            ]
-	                        }';
-
-			                $Appraiser->saveData($p1);
-		                }
-
 	                }
 
 	                $maximum_propery_value = $this->getValue("maximum_property_value","", $data);
