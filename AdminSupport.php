@@ -1103,10 +1103,10 @@ class specials_AdminSupport extends specials_baseSpecials
 		+ first_name , last_name, contact_email, time_zone, 
 		company_name, address1, city, state, zipcode, office_phone, cell_phone<br>
 		
-		+ panel_assigned, panel_weight, panel_location, panel_preferred<br>
-		+ fha (yes|no), license_state, license_level, license_exp, license_number<br>
-		+ insurance_carrier, insurance_policy, insurance_exp, insurance_limit_total<br> 
-		+ monthly_maximum, assignment_threshold, enable_manual_assignment<br>
+		+ panel_assigned, panel_weight, panel_location, panel_preferred  <== require all columns<br>
+		+ fha (yes|no), license_state, license_level, license_exp, license_number <== require all column when doing update or new data<br>
+		+ insurance_carrier, insurance_policy, insurance_exp, insurance_limit_total, insurance_effective_date <== don't require all<br> 
+		+ monthly_maximum, assignment_threshold, enable_manual_assignment, maximum_property_value  <== don't require all <br>
 		
 		+ roles ( 10 = appraiser; 12 = company owner ; or both 10,12)<br>
 		+ locations ( location name, just use top node Name , multiple location by A||B )<br>
@@ -1434,20 +1434,73 @@ class specials_AdminSupport extends specials_baseSpecials
 	                        }';
 
 	                    $this->jsonResult($Appraiser->saveData($p1));
-		                $p1 = '{"contact_id":'.$contact_id.',
+	                    // doing update
+		                if($r['fha']!="") {
+			                $p1 = '{"contact_id":'.$contact_id.',
 	                        "data":[
 	                            {"section":"licenses",
 	                                    "data":{ 
 	                                                    "state":"'.$license_state.'",
-	                                                    "fha_approved_flag":'.$fha.',
-	                                                    "appraiser_license_types_id":"'.$license_level.'",
-	                                                    "license_number":"'.$license_number.'",
-	                                                    "license_issue_dt":"",
+	                                                    "fha_approved_flag":'.$fha.'
+	                                                  }
+	                               }                                                                         
+	                            ]
+	                        }';
+
+			                $Appraiser->saveData($p1);
+		                }
+
+
+		                if($license_level!="") {
+			                $p1 = '{"contact_id":'.$contact_id.',
+	                        "data":[
+	                            {"section":"licenses",
+	                                    "data":{ 
+	                                                    "state":"'.$license_state.'",	                                               
+	                                                    "appraiser_license_types_id":"'.$license_level.'"
+	                                                   }
+	                               }                                                                         
+	                            ]
+	                        }';
+
+			                $Appraiser->saveData($p1);
+		                }
+
+		                if($license_exp!="") {
+			                $p1 = '{"contact_id":'.$contact_id.',
+	                        "data":[
+	                            {"section":"licenses",
+	                                    "data":{ 
+	                                                    "state":"'.$license_state.'",	                                                
 	                                                    "license_exp_dt":"'.$license_exp.'"}
 	                               }                                                                         
 	                            ]
 	                        }';
 
+			                $Appraiser->saveData($p1);
+		                }
+
+		                if($license_number!="") {
+			                $p1 = '{"contact_id":'.$contact_id.',
+	                        "data":[
+	                            {"section":"licenses",
+	                                    "data":{ 
+	                                                    "state":"'.$license_state.'",
+	                                                 
+	                                                    "license_number":"'.$license_number.'"
+	                                                  }
+	                               }                                                                         
+	                            ]
+	                        }';
+
+			                $Appraiser->saveData($p1);
+		                }
+
+	                }
+
+	                $maximum_propery_value = $this->getValue("maximum_property_value","", $data);
+	                if($maximum_propery_value!="") {
+		                $p1 = '{"contact_id":'.$contact_id.',"data":[{"section":"assignment_criteria","data":{"max_appraisal_value":"'.$maximum_propery_value.'"}}]}';
 		                $this->jsonResult($Appraiser->saveData($p1));
 	                }
 
@@ -1501,6 +1554,8 @@ class specials_AdminSupport extends specials_baseSpecials
 	                $insurance_policy = $r['insurance_policy'];
 	                $insurance_exp = $r['insurance_exp'];
 	                $insurance_limit_total = $r['insurance_limit_total'];
+		            $insurance_effective_date = $this->getValue("insurance_effective_date","",$data);
+
 	                if($insurance_exp != "" ) {
 	                    $insurance_exp = @date("Y-m-d", strtotime($insurance_exp));
 	                }
@@ -1532,6 +1587,13 @@ class specials_AdminSupport extends specials_baseSpecials
 	                              }]}';
 	                    $this->jsonResult($Appraiser->saveData($p1));
 	                }
+
+		            if($insurance_effective_date!="") {
+			            $p1 = '{"contact_id":'.$contact_id.',"data":[{"section":"insurance",
+	                                    "data":{"insurance_issue_dt":"'.$insurance_effective_date.'"}
+	                              }]}';
+			            $this->jsonResult($Appraiser->saveData($p1));
+		            }
 
 
 	                if($r['enable_manual_assignment']!="") {
