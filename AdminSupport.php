@@ -1469,6 +1469,7 @@ class specials_AdminSupport extends specials_baseSpecials
 		                }
 
 		                if($license_exp!="") {
+			                echo " {$license_exp }";
 			                $p1 = '{"contact_id":'.$contact_id.',
 	                        "data":[
 	                            {"section":"licenses",
@@ -1479,8 +1480,10 @@ class specials_AdminSupport extends specials_baseSpecials
 	                               }                                                                         
 	                            ]
 	                        }';
-							echo " {$license_exp }";
+
 			                $this->jsonResult($Appraiser->saveData($p1));
+		                } else {
+		                	echo " NO Lic EXP ";
 		                }
 	                }
 
