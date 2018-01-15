@@ -1448,7 +1448,7 @@ class specials_AdminSupport extends specials_baseSpecials
 	                            ]
 	                        }';
 
-		                $Appraiser->saveData($p1);
+		                $this->jsonResult($Appraiser->saveData($p1));
 	                }
 
 	                $timezone = trim($this->getValue(array("time_zone", "timezone"),"", $data));
