@@ -1418,8 +1418,25 @@ class specials_AdminSupport extends specials_baseSpecials
 
 
 	                if($license_number!="") {
+		                $obj = new stdClass();
+						$obj->CONTACT_ID = $contact_id;
+						$obj->STATE = $license_state;
+						if($r['fha']!="") {
+							$obj->FHA_APPROVED_FLAG = $fha;
+						}
+						if($license_level) {
+							$obj->APPRAISER_LICENSE_TYPES_ID = $license_level;
+						}
+						if($license_number) {
+							$obj->LICENSE_NUMBER = $license_number;
+						}
+						if($license_exp) {
+							$obj->LICENSE_EXP_DT = $license_exp;
+						}
 
-	                    $p1 = '{"contact_id":'.$contact_id.',
+						$this->_getDAO("ContactLicenseDAO")->Update($obj);
+
+		                $p1 = '{"contact_id":'.$contact_id.',
 	                        "data":[
 	                            {"section":"licenses",
 	                                    "data":{"action":"add",
@@ -1433,58 +1450,7 @@ class specials_AdminSupport extends specials_baseSpecials
 	                            ]
 	                        }';
 
-	                    $this->jsonResult($Appraiser->saveData($p1));
-	                    // doing update
-		                if($r['fha']!="") {
-			                $p1 = '{"contact_id":'.$contact_id.',
-	                        "data":[
-	                            {"section":"licenses",
-	                                    "data":{ 
-	                                                    "state":"'.$license_state.'",
-	                                                    "license_number":"'.$license_number.'",
-	                                                    "fha_approved_flag":'.$fha.'
-	                                                  }
-	                               }                                                                         
-	                            ]
-	                        }';
-
-			                $Appraiser->saveData($p1);
-		                }
-
-
-		                if($license_level!="") {
-			                $p1 = '{"contact_id":'.$contact_id.',
-	                        "data":[
-	                            {"section":"licenses",
-	                                    "data":{ 
-	                                                    "state":"'.$license_state.'",	  
-	                                                    "license_number":"'.$license_number.'",                                             
-	                                                    "appraiser_license_types_id":"'.$license_level.'"
-	                                                   }
-	                               }                                                                         
-	                            ]
-	                        }';
-
-			                $Appraiser->saveData($p1);
-		                }
-
-		                if($license_exp!="") {
-			                echo " {$license_exp }";
-			                $p1 = '{"contact_id":'.$contact_id.',
-	                        "data":[
-	                            {"section":"licenses",
-	                                    "data":{ 
-	                                                    "state":"'.$license_state.'",	 
-	                                                    "license_number":"'.$license_number.'",                                               
-	                                                    "license_exp_dt":"'.$license_exp.'"}
-	                               }                                                                         
-	                            ]
-	                        }';
-
-			                $this->jsonResult($Appraiser->saveData($p1));
-		                } else {
-		                	echo " NO Lic EXP ";
-		                }
+		                $this->jsonResult($Appraiser->saveData($p1));
 	                }
 
 	                $maximum_propery_value = $this->getValue("maximum_property_value","", $data);
