@@ -1476,8 +1476,8 @@ class specials_AdminSupport extends specials_baseSpecials
 	                               }                                                                         
 	                            ]
 	                        }';
-
-			                $Appraiser->saveData($p1);
+							echo " {$license_exp }";
+			                $this->jsonResult($Appraiser->saveData($p1));
 		                }
 
 		                if($license_number!="") {
@@ -1485,8 +1485,7 @@ class specials_AdminSupport extends specials_baseSpecials
 	                        "data":[
 	                            {"section":"licenses",
 	                                    "data":{ 
-	                                                    "state":"'.$license_state.'",
-	                                                 
+	                                                    "state":"'.$license_state.'",	                                                 
 	                                                    "license_number":"'.$license_number.'"
 	                                                  }
 	                               }                                                                         
