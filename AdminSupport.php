@@ -1403,9 +1403,12 @@ class specials_AdminSupport extends specials_baseSpecials
 	                            break;
 	                    }
 	                }
-	                $license_exp = $r['license_exp'];
+	                $license_exp = trim($r['license_exp']);
 	                if($license_exp != "") {
 	                    $license_exp =  @date("Y-m-d", strtotime($license_exp));
+	                    if(strpos($license_exp,"1969") !== false) {
+		                    $license_exp =  @date("Y-m-d", $r['license_exp']);
+	                    }
 	                }
 	                $license_number = $r['license_number'];
 
@@ -1431,6 +1434,7 @@ class specials_AdminSupport extends specials_baseSpecials
 							$obj->LICENSE_NUMBER = $license_number;
 						}
 						if($license_exp) {
+							echo " {$license_exp} ";
 							$obj->LICENSE_EXP_DT = $license_exp;
 						}
 
