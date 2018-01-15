@@ -1418,6 +1418,7 @@ class specials_AdminSupport extends specials_baseSpecials
 
 
 	                if($license_number!="") {
+
 	                    $p1 = '{"contact_id":'.$contact_id.',
 	                        "data":[
 	                            {"section":"licenses",
@@ -1431,8 +1432,23 @@ class specials_AdminSupport extends specials_baseSpecials
 	                               }                                                                         
 	                            ]
 	                        }';
-	                    echo " {$license_exp} ";
+
 	                    $this->jsonResult($Appraiser->saveData($p1));
+		                $p1 = '{"contact_id":'.$contact_id.',
+	                        "data":[
+	                            {"section":"licenses",
+	                                    "data":{ 
+	                                                    "state":"'.$license_state.'",
+	                                                    "fha_approved_flag":'.$fha.',
+	                                                    "appraiser_license_types_id":"'.$license_level.'",
+	                                                    "license_number":"'.$license_number.'",
+	                                                    "license_issue_dt":"",
+	                                                    "license_exp_dt":"'.$license_exp.'"}
+	                               }                                                                         
+	                            ]
+	                        }';
+
+		                $Appraiser->saveData($p1);
 	                }
 
 	                $timezone = trim($this->getValue(array("time_zone", "timezone"),"", $data));
