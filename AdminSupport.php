@@ -1321,9 +1321,9 @@ class specials_AdminSupport extends specials_baseSpecials
 	            if(empty($user->USER_ID) ) {
 	                // need to create user
 						try {
-							$global_user_id = empty($global_user->GLOBAL_USER_ID) ? "" : $global_user->GLOBAL_USER_ID;
+							$global_user_id = empty($global_user->GLOBAL_USER_ID) ? "null" : '"'.$global_user->GLOBAL_USER_ID.'"';
 							echo " creating ... ";
-							$p1 = '{"contact_id":null,"data":[{"section":"contact_info","data":{"global_user_id": "'.$global_user_id.'", "contact_only":false,"user_name":"'.$username.'","first_name":"'.$first_name.'","last_name":"'.$last_name.'","email":"'.$email.'","company_name":"'.$company_name.'","time_zone":"-5","login_enabled":"t","office_phone":"'.$r['office_phone'].'","cell_phone":"'.$r['cell_phone'].'","fax_phone":"","other_phone":"","ssn":"","preferred_flag":"f","address1":"'.$r['address'].'","address2":"","city":"'.$r['city'].'","state":"'.$r['state'].'","zipcode":"'.$r['zipcode'].'","zipcode_extension":""}}]}';
+							$p1 = '{"contact_id":null,"data":[{"section":"contact_info","data":{"global_user_id": '.$global_user_id.', "contact_only":false,"user_name":"'.$username.'","first_name":"'.$first_name.'","last_name":"'.$last_name.'","email":"'.$email.'","company_name":"'.$company_name.'","time_zone":"-5","login_enabled":"t","office_phone":"'.$r['office_phone'].'","cell_phone":"'.$r['cell_phone'].'","fax_phone":"","other_phone":"","ssn":"","preferred_flag":"f","address1":"'.$r['address'].'","address2":"","city":"'.$r['city'].'","state":"'.$r['state'].'","zipcode":"'.$r['zipcode'].'","zipcode_extension":""}}]}';
 							$this->bad_p1 = $p1;
 							$Appraiser->saveData($p1);
 
