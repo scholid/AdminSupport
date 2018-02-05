@@ -4025,7 +4025,7 @@ class AdminACI extends AciSkyReviewPlugin {
     private $appraisal;
     private $appraisal_id;
     private $dao = array();
-    private $debug=false;
+    private $debug=true;
     private $file_id;
     private $location_config;
     private $web_service_user;
