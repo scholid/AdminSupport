@@ -161,6 +161,13 @@ class specials_AdminSupport extends specials_baseSpecials
 
     }
 
+    public function testQ() {
+    	require_once('classes/utils/PricingImport.php');
+		$file_name = "/tmp/pricing_953f4e7d0e2bf0a18d9c7f6c0a7d7007.csv";
+		$pricing = new PricingImport();
+		$pricing->countLines($file_name);
+    }
+
     public function fixConditionEmail() {
 
 
@@ -2748,7 +2755,7 @@ class specials_AdminSupport extends specials_baseSpecials
                 "NOT IN"   => "NOT IN",
             ))),
             $this->buildInput("column_value","Search Value","text"),
-            $this->buildInput("limit","Limit Result","text","5")
+            $this->buildInput("limit","Limit Result","text","100")
         ));
         $table_name = $this->getValue("table_select","") != "" ? $this->getValue("table_select","") : $this->getValue("table_keyword","");
         $column = $this->getValue("column_lookup","");
@@ -4024,7 +4031,20 @@ class AdminACI extends AciSkyReviewPlugin {
     private $web_service_user;
 
     private function debug($message, $title='') {
-        echo $message." : ". $title."<br>";
+    	if(!is_array($message)) {
+    		if($message === true) {
+			    echo "TRUE : ". $title."<br>";
+		    } else {
+			    echo $message." : ". $title."<br>";
+		    }
+
+	    } else {
+    		echo $title.": <br>";
+    		echo "<pre>";
+    		print_r($message);
+    		echo "</pre>";
+	    }
+
     }
 
 
