@@ -950,6 +950,9 @@ class specials_AdminSupport extends specials_baseSpecials
                         $t = explode(",",$location);
                         $county = trim(strtoupper($t[0]));
                         $state = trim(strtoupper($t[1]));
+                        if(!$state || $state == "") {
+                        	$state = $this->getValue("state","",$data);
+                        }
                         echo $contact_id." => ".$county." => $state ==>";
                         $p1 = '{"contact_id":'.$contact_id.',"data":[{"section":"geopoints","data":{"action":"add","geo_type":"county","state":"'.$state.'","county_name":"'.$county.'"}}]}';
 
@@ -1111,7 +1114,8 @@ class specials_AdminSupport extends specials_baseSpecials
 		<b>Column Name ( string, yes/no )</b><br>
 		+ username ( required )<br>
 		+ first_name , last_name, email, time_zone, 
-		company_name, address1, city, state, zipcode, office_phone, cell_phone<br>
+		company_name, address, city, state, zipcode, office_phone, cell_phone<br>
+		+ location_ids (1,2,3,4,5 .. etc, put 1 for top node)<br> 
 		
 		+ panel_assigned, panel_weight, panel_location (number as id , or location name ), panel_preferred  <== require all columns<br>
 		+ fha (yes|no), license_state, license_level, license_exp, license_number <== require all column when doing update or new data<br>
@@ -2090,6 +2094,12 @@ class specials_AdminSupport extends specials_baseSpecials
 
         }
     }
+
+
+	public function menu_users_users_mass_exporting_appraisers() {
+
+	}
+
 
     public function menu_tools_api_api_testing() {
     	$sql = "SELECT * FROM web_services_users";
