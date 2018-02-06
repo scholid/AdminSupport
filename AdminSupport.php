@@ -2512,7 +2512,7 @@ class specials_AdminSupport extends specials_baseSpecials
 									"address1" => $geo['address1'],
 									"address2" => $geo['address2'],
 									"city"     => $geo['city'],
-									"state"    => $geo['state"'],
+									"state"    => $geo['state'],
 									"zipcode"  => $geo['zipcode'],
 
 									"geo_radius"  => $geo['geo_radius'],
