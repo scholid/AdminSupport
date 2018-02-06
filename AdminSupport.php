@@ -1118,7 +1118,7 @@ class specials_AdminSupport extends specials_baseSpecials
 		+ location_ids (1,2,3,4,5 .. etc, put 1 for top node)<br> 
 		
 		+ panel_assigned, panel_weight, panel_location (number as id , or location name ), panel_preferred  <== require all columns<br>
-		+ fha (yes|no), license_state, license_level, license_exp, license_number <== require all column when doing update or new data<br>
+		+ fha (yes|no), license_state, license_level, license_exp, license_number, license_issue_dt <== require all column when doing update or new data<br>
 		+ insurance_carrier, insurance_policy, insurance_exp, insurance_limit_total, insurance_effective_date <== don't require all<br> 
 		+ monthly_maximum, assignment_threshold, enable_manual_assignment, maximum_property_value  <== don't require all <br>
 		
@@ -1338,7 +1338,35 @@ class specials_AdminSupport extends specials_baseSpecials
 						try {
 							$global_user_id = empty($global_user->GLOBAL_USER_ID) ? "null" : '"'.$global_user->GLOBAL_USER_ID.'"';
 							echo " creating ... ";
-							$p1 = '{"contact_id":null,"data":[{"section":"contact_info","data":{"global_user_id": '.$global_user_id.', "contact_only":false,"user_name":"'.$username.'","first_name":"'.$first_name.'","last_name":"'.$last_name.'","email":"'.$email.'","company_name":"'.$company_name.'","time_zone":"-5","login_enabled":"t","office_phone":"'.$r['office_phone'].'","cell_phone":"'.$r['cell_phone'].'","fax_phone":"","other_phone":"","ssn":"","preferred_flag":"f","address1":"'.$r['address'].'","address2":"","city":"'.$r['city'].'","state":"'.$r['state'].'","zipcode":"'.$r['zipcode'].'","zipcode_extension":""}}]}';
+							$p1 = json_encode(array(
+								"contact_id"    => null,
+								"data"          => array(array(
+									"section"   => "contact_info",
+									"data"      =>  array(
+										"global_user_id"    => $global_user_id,
+										"contact_only"  => false,
+										"user_name" => $username,
+										"first_name"    => $first_name,
+										"last_name" => $last_name,
+										"email" => $email,
+										"company_name"  => $company_name,
+										"time_zone" => "-5",
+										"login_enabled" => "t",
+										"office_phone"  => $r['office_phone'],
+										"cell_phone"    => $r['cell_phone'],
+										"fax_phone" => "",
+										"other_phone"   => "",
+										"ssn"       => "",
+										"preferred_flag"    => "f",
+										"address1"  => $r['address'],
+										"address2"  => "",
+										"city"  => $r['city'],
+										"state" => $r['state'],
+										"zipcode"   => $r['zipcode'],
+										"zipcode_extension" => ""
+									)
+								))
+							));
 							$this->bad_p1 = $p1;
 							$Appraiser->saveData($p1);
 
@@ -1366,10 +1394,17 @@ class specials_AdminSupport extends specials_baseSpecials
 	                }
 
 	                $roles = $this->getValue("roles","",$data);
-	                if($roles!="") {
-		                $tmp_string = explode(",",$roles);
-		                $data_string = implode('","', $tmp_string);
-	                    $p1='{"contact_id":'.$contact_id.',"data":[{"section":"work_roles","data":{"selected_options":['.$data_string.']}}]}';
+	                if(!empty($roles)) {
+		                $p1 = json_encode(array(
+			                "contact_id"    => $contact_id,
+			                "data"          => array(array(
+				                "section"   => "work_roles",
+				                "data"      =>  array(
+					                "selected_options"  => explode(",",$roles)
+				                )
+			                ))
+		                ));
+
 		                $this->jsonResult($Appraiser->saveData($p1), $p1);
 	                }
 
@@ -1390,16 +1425,23 @@ class specials_AdminSupport extends specials_baseSpecials
 
 	                }
 
-	                $location_ids = explode(",",$this->getValue("location_ids","", $data));
+	                $location_ids = $this->getValue("location_ids","", $data);
 	                if(!empty($location_ids)) {
-		                $data_string = $this->getJSONNumberFromArray($location_ids);
-		                $p1='{"contact_id":'.$contact_id.',"data":[{"section":"locations","data":{"selected_options":['.$data_string.']}}]}';
-		                if($data_string!="") {
-		                	echo "Locations IDS";
-			                $this->jsonResult($Appraiser->saveData($p1), $p1);
-		                }
+		                $p1 = json_encode(array(
+			                "contact_id"    => $contact_id,
+			                "data"          => array(array(
+				                "section"   => "locations",
+				                "data"      =>  array(
+					                "selected_options"  => explode(",",$location_ids)
+				                )
+			                ))
+		                ));
 
+		                echo " Locations IDS";
+		                $this->jsonResult($Appraiser->saveData($p1), $p1);
 	                }
+
+
 	                if($company_name!="") {
 	                    // locate company name
 		                $sql = "SELECT * FROM companies where company_name=? ";
@@ -1484,28 +1526,38 @@ class specials_AdminSupport extends specials_baseSpecials
 
 						$this->_getDAO("ContactLicenseDAO")->Update($obj);
 
-		                $p1 = '{"contact_id":'.$contact_id.',
-	                        "data":[
-	                            {"section":"licenses",
-	                                    "data":{"action":"add",
-	                                                    "state":"'.$license_state.'",
-	                                                    "fha_approved_flag":'.$fha.',
-	                                                    "appraiser_license_types_id":"'.$license_level.'",
-	                                                    "license_number":"'.$license_number.'",
-	                                                    "license_issue_dt":"",
-	                                                    "license_exp_dt":"'.$license_exp.'"}
-	                               }                                                                         
-	                            ]
-	                        }';
 
-
+		                $p1 = json_encode(array(
+			                "contact_id"    => $contact_id,
+			                "data"          => array(array(
+				                "section"   => "licenses",
+				                "data"      =>  array(
+					                "action"  => "add",
+					                "state" => $license_state,
+					                "fha_approved_flag" => $fha,
+					                "appraiser_license_types_id"    => $license_level,
+					                "license_number"    => $license_number,
+					                "license_issue_dt"  => $this->getValue("license_issue_dt","",$data),
+					                "license_exp_dt"    => $license_exp
+				                )
+			                ))
+		                ));
 
 		                $this->jsonResult($Appraiser->saveData($p1), $p1);
 	                }
 
 	                $maximum_propery_value = $this->getValue("maximum_property_value","", $data);
 	                if($maximum_propery_value!="") {
-		                $p1 = '{"contact_id":'.$contact_id.',"data":[{"section":"assignment_criteria","data":{"max_appraisal_value":"'.$maximum_propery_value.'"}}]}';
+		                $p1 = json_encode(array(
+			                "contact_id"    => $contact_id,
+			                "data"          => array(array(
+				                "section"   => "assignment_criteria",
+				                "data"      =>  array(
+					                "max_appraisal_value"  => $maximum_propery_value,
+
+				                )
+			                ))
+		                ));
 		                $this->jsonResult($Appraiser->saveData($p1), $p1);
 	                }
 
@@ -1548,12 +1600,24 @@ class specials_AdminSupport extends specials_baseSpecials
 		                    $location_ids = array($panel_location);
 	                    }
 
-
 	                    $InternalLocationVendorPanels = new ManageInternalLocationVendorPanels();
 	                    foreach($location_ids as $location_id) {
-	                        $p1 = '{"party_id":'.$location_id.',"data":[{"section":"location_appraisers","data":{"weight":"'.$panel_weight.'","preferred":"'.$panal_preferred.'","contact_id":"'.$contact_id.'","assigned":"'.$panel_assigned.'"}}]}';
+		                    $p1 = json_encode(array(
+			                    "party_id"    => $location_id,
+			                    "data"          => array(array(
+				                    "section"   => "location_appraisers",
+				                    "data"      =>  array(
+					                    "weight"  => $panel_weight,
+					                    "preferred" => $panal_preferred,
+					                    "contact_id"    => $contact_id,
+					                    "assigned"  => $panel_assigned
+
+				                    )
+			                    ))
+		                    ));
+
 	                        echo " Assign {$location_id} ";
-	                        $this->jsonResult($InternalLocationVendorPanels->saveData($p1));
+	                        $this->jsonResult($InternalLocationVendorPanels->saveData($p1), $p1);
 	                    }
 	                }
 
@@ -1565,69 +1629,66 @@ class specials_AdminSupport extends specials_baseSpecials
 	                $insurance_exp = $r['insurance_exp'];
 	                $insurance_limit_total = $r['insurance_limit_total'];
 		            $insurance_effective_date = $this->getValue("insurance_effective_date","",$data);
-
+		            $insurance_data = array();
 	                if($insurance_exp != "" ) {
 	                    $insurance_exp = @date("Y-m-d", strtotime($insurance_exp));
+		                $insurance_data['insurance_exp_dt'] = $insurance_exp;
 	                }
 
 	                if($insurance_carrier!="") {
-	                    $p1 = '{"contact_id":'.$contact_id.',"data":[{"section":"insurance",
-	                                    "data":{"insurance_carrier":"'.$insurance_carrier.'"}
-	                              }]}';
-	                    $this->jsonResult($Appraiser->saveData($p1), $p1);
+		                $insurance_data['insurance_carrier'] = $insurance_carrier;
 	                }
 
 	                if($insurance_policy!="") {
-	                    $p1 = '{"contact_id":'.$contact_id.',"data":[{"section":"insurance",
-	                                    "data":{"insurance_policy":"'.$insurance_policy.'"}
-	                              }]}';
-	                    $this->jsonResult($Appraiser->saveData($p1), $p1);
+		                $insurance_data['insurance_policy'] = $insurance_policy;
 	                }
 
 	                if($insurance_limit_total!="") {
-	                    $p1 = '{"contact_id":'.$contact_id.',"data":[{"section":"insurance",
-	                                    "data":{"insurance_limit_total":"'.$insurance_limit_total.'"}
-	                              }]}';
-	                    $this->jsonResult($Appraiser->saveData($p1), $p1);
-	                }
-
-	                if($insurance_exp!="") {
-	                    $p1 = '{"contact_id":'.$contact_id.',"data":[{"section":"insurance",
-	                                    "data":{"insurance_exp_dt":"'.$insurance_exp.'"}
-	                              }]}';
-	                    $this->jsonResult($Appraiser->saveData($p1), $p1);
+		                $insurance_data['insurance_limit_total'] = $insurance_limit_total;
 	                }
 
 		            if($insurance_effective_date!="") {
-			            $p1 = '{"contact_id":'.$contact_id.',"data":[{"section":"insurance",
-	                                    "data":{"insurance_issue_dt":"'.$insurance_effective_date.'"}
-	                              }]}';
+			            $insurance_data['insurance_issue_dt'] = $insurance_effective_date;
+		            }
+		            if(!empty($insurance_data)) {
+			            $p1 = json_encode(array(
+				            "contact_id"    => $contact_id,
+				            "data"          => array(array(
+					            "section"   => "insurance",
+					            "data"      =>  $insurance_data
+				            ))
+			            ));
 			            $this->jsonResult($Appraiser->saveData($p1), $p1);
 		            }
 
 
 	                if($r['enable_manual_assignment']!="") {
 	                    $enable_manual_assignment = $this->getTrueAsT($r['enable_manual_assignment']);
-	                    $p1 = '{"contact_id":'.$contact_id.',
-	                        "data":[
-	                              {"section":"assignment_criteria",
-	                                    "data":{"direct_assign_enabled_flag":"'.$enable_manual_assignment.'"}
-	                              }                                                                     
-	                            ]
-	                        }';
+		                $p1 = json_encode(array(
+			                "contact_id"    => $contact_id,
+			                "data"          => array(array(
+				                "section"   => "assignment_criteria",
+				                "data"      =>  array(
+				                	"direct_assign_enabled_flag"    => $enable_manual_assignment
+				                )
+			                ))
+		                ));
 	                    $this->jsonResult($Appraiser->saveData($p1), $p1);
 	                }
 
 
 	                $monthly_maximum = $r['monthly_maximum'];
 	                if($monthly_maximum!="") {
-	                    $p1 = '{"contact_id":'.$contact_id.',
-	                        "data":[
-	                              {"section":"assignment_criteria",
-	                                    "data":{"monthly_max":"'.$monthly_maximum.'"}
-	                              }                                                                     
-	                            ]
-	                        }';
+		                $p1 = json_encode(array(
+			                "contact_id"    => $contact_id,
+			                "data"          => array(array(
+				                "section"   => "assignment_criteria",
+				                "data"      =>  array(
+					                "monthly_max"    => $monthly_maximum
+				                )
+			                ))
+		                ));
+
 	                    $this->jsonResult($Appraiser->saveData($p1), $p1);
 
 	                }
@@ -1635,22 +1696,32 @@ class specials_AdminSupport extends specials_baseSpecials
 
 	                $assignment_threshold = $r['assignment_threshold'];
 	                if($assignment_threshold!="") {
-	                    $p1 = '{"contact_id":'.$contact_id.',
-	                        "data":[
-	                              {"section":"assignment_criteria",
-	                                    "data":{"assignment_threshold":"'.$assignment_threshold.'"}
-	                              }                                                                     
-	                            ]
-	                        }';
+
+		                $p1 = json_encode(array(
+			                "contact_id"    => $contact_id,
+			                "data"          => array(array(
+				                "section"   => "assignment_criteria",
+				                "data"      =>  array(
+					                "assignment_threshold"    => $assignment_threshold
+				                )
+			                ))
+		                ));
 	                    $this->jsonResult($Appraiser->saveData($p1), $p1);
 	                }
 
 	                if($r['locations']!="") {
 	                    $location_ids = $this->getPartyIDsByLocation($r['locations'],"||");
-	                    $selected_options = $this->arrayToJSONIDs($location_ids);
 
-	                    $p1 = '{"contact_id":'.$contact_id.',"data":[{"section":"locations","data":{"selected_options":['.$selected_options.']}}]}';
-	                    echo " locations:{$selected_options} ";
+		                $p1 = json_encode(array(
+			                "contact_id"    => $contact_id,
+			                "data"          => array(array(
+				                "section"   => "locations",
+				                "data"      =>  array(
+					                "selected_options"    => $location_ids
+				                )
+			                ))
+		                ));
+	                    echo " locations  ";
 	                    $this->jsonResult($Appraiser->saveData($p1), $p1);
 	                }
 
@@ -1693,7 +1764,7 @@ class specials_AdminSupport extends specials_baseSpecials
         echo "<br>";
     }
 
-    public function jsonResult($result, $p1) {
+    public function jsonResult($result, $p1 = null) {
     	$this->bad_p1 = $p1;
         $x= false;
         foreach($result as $key=>$section) {
