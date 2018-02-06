@@ -3463,6 +3463,8 @@ class specials_AdminSupport extends specials_baseSpecials
 			    }
 			 //   echo " <br>";
 		    }
+		    $sql = "DELETE FROM contact_addresses WHERE geo_type='county' AND county_name <> '' AND (state='' OR state IS NULL);";
+		    $this->query( $sql);
 		    echo "DONE";
 	    } catch(Exception $e) {
     		echo "<pre>";
