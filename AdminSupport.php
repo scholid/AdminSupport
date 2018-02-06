@@ -2367,7 +2367,7 @@ class specials_AdminSupport extends specials_baseSpecials
 		}
 		if(empty($list)) {
 			$list = array(
-				"SELECT * FROM users where user_type=4"
+				"SELECT * FROM users where user_type=4 "
 			);
 			$els[0] = array();
 		} else {
