@@ -1113,25 +1113,32 @@ class specials_AdminSupport extends specials_baseSpecials
         echo "Appraisers Template Columns: <br>
 		<b>Column Name ( string, yes/no )</b><br>
 		+ username ( required )<br>
-		+ first_name , last_name, email, time_zone, 
+		+ class ( AppraiserUser , always required ) <br>
+		+ roles ( 10 = appraiser; 12 = company owner ; or both 10,12)<br>
+		+ first_name , last_name, ( or using one column 'full_name' ), email, time_zone, 
 		company_name, address, city, state, zipcode, office_phone, cell_phone<br>
+		mailing_address, mailing_city, mailing_state, mailing_zipcode<br>
+		+ ssn, ein<br>
 		+ location_ids (1,2,3,4,5 .. etc, put 1 for top node)<br> 
+
 		
 		+ panel_assigned, panel_weight, panel_location (number as id , or location name ), panel_preferred  <== require all columns<br>
+		+ allowed_loan_types ( don't need this, or specific loan types with commas )<br>
 		+ fha (yes|no), license_state, license_level, license_exp, license_number, license_issue_dt <== require all column when doing update or new data<br>
 		+ insurance_carrier, insurance_policy, insurance_exp, insurance_limit_total, insurance_effective_date <== don't require all<br> 
 		+ monthly_maximum, assignment_threshold, enable_manual_assignment, maximum_property_value  <== don't require all <br>
 		
-		+ roles ( 10 = appraiser; 12 = company owner ; or both 10,12)<br>
+		
 		+ locations ( location name, just use top node Name , multiple location by A||B )<br>
-		+ class ( AppraiserUser , always required ) 
+		
 		<br><br>
 		<hr>
 		Appraiser Geo Data Template<br>
 		+ username ( required )<br>
 		+ class ( AppraiserUser ,  required ) <br>
+		+ state ( required) <br>
 		+ location ( string, as only county name support now )<br>
-		+ type ( = 'county' for now )<br>
+		+ type ( 'county' for now )<br><br>
         ";
 
         $mass_broker_company = isset($_FILES['mass_broker_company']) ? $_FILES['mass_broker_company'] : null;
@@ -1304,6 +1311,12 @@ class specials_AdminSupport extends specials_baseSpecials
             $r['first_name'] = $this->getValue("first_name","",$data);
             $r['last_name'] = $this->getValue("last_name","",$data);
             $r['contact_email'] = $this->getValue("email","",$data);
+	        $full_name = $this->getValue("full_name","",$data);
+	        if(!empty($full_name)) {
+	        	$t = explode(" ",trim($full_name),2);
+		        $r['first_name'] = isset($t[0]) ? $t[0] : $r['first_name'];
+		        $r['last_name'] = isset($t[1]) ? $t[1] : $r['last_name'];
+	        }
 
             $r['company_name'] = $this->getValue("company_name","",$data);
             $r['address'] = $this->getValue("address","",$data);
@@ -1312,6 +1325,16 @@ class specials_AdminSupport extends specials_baseSpecials
             $r['zipcode'] = substr($this->getValue("zipcode","",$data),0,5);
             $r['office_phone'] = $this->getValue("office_phone","",$data);
             $r['cell_phone'] = $this->getValue("cell_phone","",$data);
+
+	        $r['middle_initial'] = $this->getValue("middle_initial","",$data);
+	        $r['county'] = $this->getValue("county","",$data);
+	        $r['mailing_address1'] = $this->getValue("mailing_address","",$data);
+	        $r['mailing_address2'] = $this->getValue("mailing_address2","",$data);
+	        $r['mailing_city'] = $this->getValue("mailing_city","",$data);
+	        $r['mailing_state'] = $this->getValue("mailing_state","",$data);
+	        $r['mailing_zipcode'] = substr($this->getValue("mailing_zipcode","",$data),0,5);
+	        $r['same_mailing_flag'] = $this->getTrueAsT($r['mailing_address1'] == $r['address'] || empty($r['mailing_address1']));
+
 
             $r['class'] = $this->getValue("class","", $data);
             $r['locations'] = $this->getValue("locations","", $data);
@@ -1740,6 +1763,15 @@ class specials_AdminSupport extends specials_baseSpecials
 	                $x['last_name'] = $r['last_name'];
 	                $x['contact_email'] = $r['contact_email'];
 
+		            $x['middle_initial'] = $r['middle_initial'];
+		            $x['county'] = $r['county'];
+		            $x['mailing_address1'] = $r['mailing_address1'];
+		            $x['mailing_address2'] = $r['mailing_address2'];
+		            $x['mailing_city'] = $r['mailing_city'];
+		            $x['mailing_state'] = $r['mailing_state'];
+		            $x['mailing_zipcode'] = $r['mailing_zipcode'];
+		            $x['same_mailing_flag'] = $r['same_mailing_flag'];
+
 	                $update = new stdClass();
 	                $update->CONTACT_ID = $contact_id;
 	                foreach($x as $key=>$value) {
@@ -1749,6 +1781,13 @@ class specials_AdminSupport extends specials_baseSpecials
 	                    }
 	                }
 	                $this->_getDAO("ContactsDAO")->Update($update);
+
+	                $ssn = $this->getValue(array("ssn","ein","appraiser_ein"),"",$data);
+	                if(!empty($ssn)) {
+		                $this->_getDAO("AppraiserInfoDAO")->updateSSN($contact_id, trim($ssn));
+	                }
+
+
 
 	                echo " => Done";
 	            } else {
