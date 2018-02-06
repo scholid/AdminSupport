@@ -1421,6 +1421,9 @@ class specials_AdminSupport extends specials_baseSpecials
 	                        case "certified general":
 	                            $license_level = 3;
 	                            break;
+		                    default:
+			                    $license_level = 1;
+		                    	break;
 	                    }
 	                }
 	                $license_exp = trim($r['license_exp']);
@@ -1473,6 +1476,8 @@ class specials_AdminSupport extends specials_baseSpecials
 	                               }                                                                         
 	                            ]
 	                        }';
+
+		                echo $p1;
 
 		                $this->jsonResult($Appraiser->saveData($p1), $p1);
 	                }
