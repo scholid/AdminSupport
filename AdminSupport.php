@@ -1315,6 +1315,10 @@ class specials_AdminSupport extends specials_baseSpecials
 
             $r['class'] = $this->getValue("class","", $data);
             $r['locations'] = $this->getValue("locations","", $data);
+
+            $r['location_ids'] = $this->getValue("location_ids","", $data);
+            $r['allowed_loan_types'] = $this->getValue("allowed_loan_types","", $data);
+
             if($r['class'] == "") {
                 echo " NO CLASS <br>";
                 return ;
@@ -1367,6 +1371,23 @@ class specials_AdminSupport extends specials_baseSpecials
 		                $data_string = implode('","', $tmp_string);
 	                    $p1='{"contact_id":'.$contact_id.',"data":[{"section":"work_roles","data":{"selected_options":['.$data_string.']}}]}';
 		                $this->jsonResult($Appraiser->saveData($p1), $p1);
+	                }
+
+	                if(!empty($r['allowed_loan_types'])) {
+	                	$p1 = array(
+	                		"contact_id"    => $contact_id,
+			                "data"          => array(array(
+			                	"section"   => "allowed_loan_types",
+			                    "data"      =>  array(
+			                    	"selected_options"  => explode(",",$r['allowed_loan_types'])
+			                    )
+			                ))
+		                );
+	                	$json = json_encode($p1);
+		                $this->jsonResult($Appraiser->saveData($json), $json);
+		                // $p1 = '{"contact_id":814,"data":{"section":"allowed_loan_types","data":[{"selected_options":["1","2","3","4","5"]}]}}';
+	                	// $p1 = '{"contact_id":814,"data":[{"section":"allowed_loan_types","data":{"selected_options":["1","2","3","4","5"]}}]}';
+
 	                }
 
 	                $location_ids = explode(",",$this->getValue("location_ids","", $data));
@@ -1477,7 +1498,7 @@ class specials_AdminSupport extends specials_baseSpecials
 	                            ]
 	                        }';
 
-		                echo $p1;
+
 
 		                $this->jsonResult($Appraiser->saveData($p1), $p1);
 	                }
