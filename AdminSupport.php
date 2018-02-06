@@ -15,6 +15,7 @@ ini_set('display_startup_errors', 1);
 ini_set('max_execution_time', 600);
 
 set_time_limit(600);
+ini_set('memory_limit', '512M');
 error_reporting(E_ALL & ~E_WARNING & ~E_NOTICE);
 
 require_once('pages/BasePage.php');
@@ -1102,6 +1103,91 @@ class specials_AdminSupport extends specials_baseSpecials
 
     }
 
+    public function getMappingFields($data = array(), $use_data_fields_only = false) {
+    	if($use_data_fields_only) {
+    		return $data;
+	    }
+    	$fields = array(
+    		"username"  => "",
+		    "class"     => "AppraiserUser",
+		    "roles"     => 10,
+		    "first_name"    => "", // or use full_name
+		    "middle_initial" => "",
+		    "last_name"     => "",
+		    "email" =>  "",
+		    "time_zone" => "-5",
+		    "company_name"  => "",
+		    "address"   => "",
+		    "city"  => "",
+		    "county"    => "",
+		    "state" => "",
+		    "zipcode"   => "",
+		    "office_phone"  => "",
+		    "cell_phone"    => "",
+
+		    "mailing_address"   => "",
+		    "mailing_city"  => "",
+		    "mailing_state" => "",
+		    "mailing_zipcode"   => "",
+		    "ssn_ein"   => "",
+		    "ein"   => "",
+		    "location_ids"  => 1,
+
+		    // panel
+		    "panel_assigned" => "", // t f
+	        "panel_weight"  => "",
+		    "panel_location"    => "",
+		    "panel_preferred"   => "", // t f
+
+		    // loan types
+		    "allowed_loan_types" => "", // or 1,2,3,4,5
+
+		    // license
+		    "fha" => "",
+		    "license_state" => "",
+		    "license_level" => "",
+		    "license_exp"   => "",
+		    "license_number"    => "",
+		    "license_issue_dt"  => "",
+		    "license_user_override_flag"    => "",
+		    "license_eff_dt" => "",
+		    "license_active_flag" => "",
+
+		    // insurance
+		    "insurance_carrier" => "",
+		    "insurance_policy"  => "",
+		    "insurance_exp" => "",
+		    "insurance_effective_date"  => "",
+		    "insurance_limit_total" => "",
+		    "insurance_limit_per_claim" => "",
+
+		    // assignment
+		    "monthly_maximum"   => "",
+		    "assignment_threshold"  => "",
+		    "enable_manual_assignment"  => "",
+		    "maximum_property_value"    => "",
+
+		    // locations
+		   // "locations" => 1, // multi A||B
+
+	    );
+    	foreach($data as $key=>$value) {
+    		$fields[$key] = $value;
+	    }
+    	return $fields;
+    }
+
+    public function getFieldsHeader($fields = array()) {
+    	$res = array();
+    	if(empty($fields)) {
+    		$fields = $this->getMappingFields();
+	    }
+    	foreach($fields as $key=>$value) {
+    		$res[$key] = $key;
+	    }
+	    return $res;
+    }
+
     public function mass_create_appraisers()
     {
         $this->buildForm(array(
@@ -1118,7 +1204,7 @@ class specials_AdminSupport extends specials_baseSpecials
 		+ first_name , last_name, ( or using one column 'full_name' ), email, time_zone, 
 		company_name, address, city, state, zipcode, office_phone, cell_phone<br>
 		mailing_address, mailing_city, mailing_state, mailing_zipcode<br>
-		+ ssn, ein<br>
+		+ ssn_ein<br>
 		+ location_ids (1,2,3,4,5 .. etc, put 1 for top node)<br> 
 
 		
@@ -1533,36 +1619,59 @@ class specials_AdminSupport extends specials_baseSpecials
 		                $obj = new stdClass();
 						$obj->CONTACT_ID = $contact_id;
 						$obj->STATE = $license_state;
+
+		                $lic = array(
+			                "action"  => "add",
+			                "state" => $license_state,
+			                "appraiser_license_types_id"    => $license_level,
+			                "license_issue_dt"  => $this->getValue("license_issue_dt","",$data),
+
+		                );
+
 						if($r['fha']!="") {
 							$obj->FHA_APPROVED_FLAG = $fha;
+							$lic['fha_approved_flag'] = $fha;
 						}
 						if($license_level) {
 							$obj->APPRAISER_LICENSE_TYPES_ID = $license_level;
 						}
 						if($license_number) {
 							$obj->LICENSE_NUMBER = $license_number;
+							$lic['license_number'] = $license_number;
 						}
 						if($license_exp) {
 							echo " {$license_exp} ";
 							$obj->LICENSE_EXP_DT = $license_exp;
+							$lic['license_exp_dt'] = $license_exp;
 						}
 
+						$license_user_override_flag = $this->getValue("license_user_override_flag","",$data);
+		                if(!empty($license_user_override_flag)) {
+			                $obj->USER_OVERRIDE_FLAG = $this->getTrueAsT($license_user_override_flag);
+			                $lic['user_override_flag'] = $this->getTrueAsT($license_user_override_flag);
+		                }
+
+		                $license_eff_dt = $this->getValue("license_eff_dt","",$data);
+		                if(!empty($license_eff_dt)) {
+			                $obj->LICENSE_EFF_DT = $license_eff_dt;
+			                $lic['license_eff_dt'] = $license_eff_dt;
+		                }
+
+		                $license_active_flag = $this->getValue("license_active_flag","",$data);
+		                if(!empty($license_active_flag)) {
+			                $obj->ACTIVE_FLAG =  $this->getTrueAsT($license_active_flag);
+			                $lic['active_flag'] = $this->getTrueAsT($license_active_flag);
+		                }
+
 						$this->_getDAO("ContactLicenseDAO")->Update($obj);
+
 
 
 		                $p1 = json_encode(array(
 			                "contact_id"    => $contact_id,
 			                "data"          => array(array(
 				                "section"   => "licenses",
-				                "data"      =>  array(
-					                "action"  => "add",
-					                "state" => $license_state,
-					                "fha_approved_flag" => $fha,
-					                "appraiser_license_types_id"    => $license_level,
-					                "license_number"    => $license_number,
-					                "license_issue_dt"  => $this->getValue("license_issue_dt","",$data),
-					                "license_exp_dt"    => $license_exp
-				                )
+				                "data"      =>  $lic
 			                ))
 		                ));
 
@@ -1653,6 +1762,7 @@ class specials_AdminSupport extends specials_baseSpecials
 	                $insurance_policy = $r['insurance_policy'];
 	                $insurance_exp = $r['insurance_exp'];
 	                $insurance_limit_total = $r['insurance_limit_total'];
+		            $insurance_limit_per_claim = $this->getValue("insurance_limit_per_claim","", $data);
 		            $insurance_effective_date = $this->getValue("insurance_effective_date","",$data);
 		            $insurance_data = array();
 	                if($insurance_exp != "" ) {
@@ -1671,6 +1781,10 @@ class specials_AdminSupport extends specials_baseSpecials
 	                if($insurance_limit_total!="") {
 		                $insurance_data['insurance_limit_total'] = $insurance_limit_total;
 	                }
+
+		            if($insurance_limit_per_claim!="") {
+			            $insurance_data['insurance_limit_per_claim'] = $insurance_limit_per_claim;
+		            }
 
 		            if($insurance_effective_date!="") {
 			            $insurance_data['insurance_issue_dt'] = $insurance_effective_date;
@@ -1782,7 +1896,7 @@ class specials_AdminSupport extends specials_baseSpecials
 	                }
 	                $this->_getDAO("ContactsDAO")->Update($update);
 
-	                $ssn = $this->getValue(array("ssn","ein","appraiser_ein"),"",$data);
+	                $ssn = $this->getValue(array("ssn","ein","appraiser_ein","ssn_ein"),"",$data);
 	                if(!empty($ssn)) {
 		                $this->_getDAO("AppraiserInfoDAO")->updateSSN($contact_id, trim($ssn));
 	                }
@@ -2235,7 +2349,238 @@ class specials_AdminSupport extends specials_baseSpecials
 
 
 	public function menu_users_users_mass_exporting_appraisers() {
+		$this->buildForm(array(
+			$this->buildInput("type","Export Type","select" , $this->buildSelectOption(array(
+								"basic" =>  "Basic Appraiser Info",
+								"license"   => "Appraiser License",
+								"geopoint"  => "Appraiser GeoPoints"
+			))),
+			$this->buildInput("list","Only these Appraisers","textarea",$this->getValue("list",""))
+		));
+		$type = $this->getValue("type","");
+		$list = explode("\n",$this->getValue("list",""));
+		if(empty($list)) {
+			$list = explode("\r",$this->getValue("list",""));
+			if(empty($list)) {
+				$list = explode(",",$this->getValue("list",""));
+			}
+		}
+		if(empty($list)) {
+			$list = array(
+				"SELECT * FROM users where user_type=4"
+			);
+		} else {
+			foreach($list as $t=>$name) {
+				$name = trim($name);
+				$list[$t] = "SELECT user_name, user_id, contact_id, user_type FROM users where user_name='{$name}' LIMIT 1";
+			}
+		}
 
+
+		if($type !="") {
+
+			$Appraiser = new ManageAppraiserUser();
+			$dem =0;
+			$filename = "/tmp/output.{$type}.csv";
+			$f = fopen($filename,"w+");
+			$has_header = false;
+
+			foreach($list as $t=>$sql) {
+				$data = $this->query( $sql )->getRows();
+				foreach ( $data as $user ) {
+					echo "Processing {$user['user_name']} <br> ";
+					$dem++;
+					switch ( $type ) {
+						case "basic":
+
+							$row = $this->convertGetDataToSection( $Appraiser->getData( $user['contact_id'] ) );
+							$in  = isset( $row['insurance_carrier'][0] ) ? $row['insurance_carrier'][0] : array(
+								"insurance_carrier"         => "",
+								"insurance_policy"          => "",
+								"insurance_file_id"         => "",
+								"insurance_limit_per_claim" => "",
+								"insurance_limit_total"     => "",
+								"insurance_issue_dt"        => "",
+								"insurance_exp_dt"          => "",
+							);
+
+							// mapping
+							$map = $this->getMappingFields( array(
+								"username"       => $row['contact_info']['user_name'],
+								"class"          => "AppraiserUser",
+								"roles"          => implode( ",", $row['work_roles'] ),
+								"first_name"     => $row['contact_info']['first_name'], // or use full_name
+								"middle_initial" => $row['contact_info']['middle_initial'],
+								"last_name"      => $row['contact_info']['last_name'],
+
+								"email"        => $row['contact_info']['email'],
+								"time_zone"    => $row['contact_info']['time_zone'],
+								"company_name" => $row['contact_info']['company_name'],
+								"address"      => $row['contact_info']['address1'],
+								"city"         => $row['contact_info']['city'],
+								"state"        => $row['contact_info']['state'],
+								"zipcode"      => $row['contact_info']['zipcode'],
+								"office_phone" => $row['contact_info']['office_phone'],
+								"cell_phone"   => $row['contact_info']['cell_phone'],
+								"county"       => $row['contact_info']['county'],
+
+								"mailing_address"           => $row['contact_info']['mailing_address1'],
+								"mailing_city"              => $row['contact_info']['mailing_city'],
+								"mailing_state"             => $row['contact_info']['mailing_state'],
+								"mailing_zipcode"           => $row['contact_info']['mailing_zipcode'],
+								"ssn_ein"                   => $row['contact_info']['ssn'],
+								// manage locations
+								"location_ids"              => implode( ",", $row['locations'] ),
+
+								// panel
+								"panel_assigned"            => "", // t f
+								"panel_weight"              => "",
+								"panel_location"            => "",
+								"panel_preferred"           => "", // t f
+
+								// loan types
+								"allowed_loan_types"        => "", // or 1,2,3,4,5
+
+
+								// insurance
+								"insurance_carrier"         => $in['insurance_carrier'],
+								"insurance_policy"          => $in['insurance_policy'],
+								"insurance_exp"             => $this->convertDate( "m/d/Y",$in['insurance_exp_dt']),
+								"insurance_limit_total"     => $in['insurance_limit_total'],
+								"insurance_limit_per_claim" => $in['insurance_limit_per_claim'],
+								"insurance_effective_date"  => $this->convertDate( "m/d/Y",$in['insurance_issue_dt']),
+
+								// assignment
+								"monthly_maximum"           => $row['assignment_criteria']['monthly_max'],
+								"assignment_threshold"      => $row['assignment_criteria']['assignment_threshold'],
+								"enable_manual_assignment"  => $row['assignment_criteria']['direct_assign_enabled_flag'],
+								"maximum_property_value"    => $row['assignment_criteria']['max_appraisal_value'],
+
+								// locations
+								// "locations" => implode(",", $row['locations']), // multi A||B
+							), true);
+
+							if(!$has_header) {
+								$header = $this->getFieldsHeader($map);
+								fputcsv($f, $header);
+								$has_header = true;
+							}
+							fputcsv($f, $map);
+
+							break;
+						case "license":
+							$row = $this->convertGetDataToSection( $Appraiser->getData( $user['contact_id'] ) );
+							// mapping
+							foreach ( $row['licenses'] as $lic ) {
+								$map     = $this->getMappingFields( array(
+									"username" => $row['contact_info']['user_name'],
+									"class"    => "AppraiserUser",
+
+									"fha"                        => $this->getTrueAsT( $lic['fha_approved_flag'] ),
+									"license_state"              => $lic['state'],
+									"license_level"              => $lic['license_type'],
+									"license_number"             => $lic['license_number'],
+									"license_exp"                => $this->convertDate( "m/d/Y", $lic['license_exp_dt'] ),
+									"license_eff_dt"             => $this->convertDate( "m/d/Y", $lic['license_eff_dt'] ),
+									"license_issue_dt"           => $this->convertDate( "m/d/Y", $lic['license_exp_dt'] ),
+									"license_user_override_flag" => $this->getTrueAsT( $lic['user_override_flag'] ),
+
+									"license_active_flag" => $this->getTrueAsT( $lic['active_flag'] ),
+
+								), true );
+
+								if(!$has_header) {
+									$header = $this->getFieldsHeader($map);
+									fputcsv($f, $header);
+									$has_header = true;
+								}
+								fputcsv($f, $map);
+							}
+
+							break;
+						case "geopoint":
+
+							$row = $this->convertGetDataToSection( $Appraiser->getData( $user['contact_id'] ) );
+							// mapping
+							foreach ( $row['geopoints'] as $geo ) {
+								$map     = $this->getMappingFields( array(
+									"username" => $row['contact_info']['user_name'],
+									"class"    => "AppraiserUser",
+
+									"address1" => $geo['address1'],
+									"address2" => $geo['address2'],
+									"city"     => $geo['city'],
+									"state"    => $geo['state"'],
+									"zipcode"  => $geo['zipcode'],
+
+									"geo_radius"  => $geo['geo_radius'],
+									"county_name" => $geo['county_name'],
+									"geo_type"    => $geo['geo_type'],
+
+								), true );
+
+								if(!$has_header) {
+									$header = $this->getFieldsHeader($map);
+									fputcsv($f, $header);
+									$has_header = true;
+								}
+								fputcsv($f, $map);
+							}
+
+							break;
+					}
+				}
+				// end for each user
+			}
+
+			fclose($f);
+
+			echo "<br>
+				CSV Created. Click to download: <a href='?action=downloadFile&file={$filename}'>Appraiser {$type} CSV</a>
+				<br>
+			";
+
+
+		}
+	}
+
+
+	public function downloadFile($file = null) {
+		if(empty($file)) {
+			$file = $_REQUEST['file'];
+		}
+		$file_name = basename($file);
+		header('Content-Disposition: attachment; filename="'.$file_name.'"');
+		$file_extension = strtolower(substr($file_name, strlen($file_name) - 4));
+		header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+		header("Cache-Control: max-age=1, s-maxage=1");
+		header('Pragma: public');
+
+		echo file_get_contents($file);
+		flush();
+		exit;
+	}
+
+	public function convertGetDataToSection($getData) {
+    	$sections = array();
+    	$skip = array(
+    		"pricing",
+		    "location_pricing"
+	    );
+    	foreach($getData as $section) {
+    		$section_name = $section['section'];
+    		if(!in_array($section_name,$skip)) {
+    			if(isset($section['data'])) {
+				    $sections[$section_name] = $section['data'];
+			    } else if(isset($section['options']) && isset($section['selected_options'])) {
+				    $sections[$section_name] = $section['selected_options'];
+			    }
+
+
+		    }
+
+	    }
+	    return $sections;
 	}
 
 
@@ -2308,14 +2653,15 @@ class specials_AdminSupport extends specials_baseSpecials
 
     public function Execute($User)
     {
+	    $action = isset($_GET['action']) ? $_GET['action'] : "";
+
         if (!in_array(1, $User->Roles)) {
             throw new Exception("You do not have the privilage to access this page", 999);
         }
         try {
             $this->user = $User;
-            $action = isset($_GET['action']) ? $_GET['action'] : "";
-            if($action == "JSPost") {
-                $this->JSPost();
+            if(in_array($action, array("JSPost","downloadFile"))) {
+                call_user_func(array($this, $action));
                 exit;
             }
             $this->buildHeader();
@@ -2341,6 +2687,15 @@ class specials_AdminSupport extends specials_baseSpecials
 
     public function outputJSON($res) {
         die(json_encode($res));
+    }
+
+    public function convertDate($type, $date) {
+	    $date = trim($date);
+	    $d =  @date("Y-m-d", strtotime($date));
+	    if(strpos($d,"1969") !== false) {
+		    $d =  @date("Y-m-d", $date);
+	    }
+	    return $d;
     }
 
     public function quickBackup($sql, $data = array()) {
