@@ -2396,7 +2396,7 @@ class specials_AdminSupport extends specials_baseSpecials
 						case "basic":
 
 							$row = $this->convertGetDataToSection( $Appraiser->getData( $user['contact_id'] ) );
-							$in  = isset( $row['insurance_carrier'][0] ) ? $row['insurance_carrier'][0] : array(
+							$in  = isset( $row['insurance'][0] ) ? $row['insurance'][0] : array(
 								"insurance_carrier"         => "",
 								"insurance_policy"          => "",
 								"insurance_file_id"         => "",
