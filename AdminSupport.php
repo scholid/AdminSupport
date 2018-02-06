@@ -1468,7 +1468,7 @@ class specials_AdminSupport extends specials_baseSpecials
 	                }
 
 	                // $license
-	                $fha = $this->getTrueAsString($this->isTrue($r['fha']));
+	                $fha = $this->getTrueAsT($r['fha']);
 
 	                $license_state = $r['license_state'];
 	                $license_level = $r['license_level'];
@@ -1608,16 +1608,18 @@ class specials_AdminSupport extends specials_baseSpecials
 				                    "section"   => "location_appraisers",
 				                    "data"      =>  array(
 					                    "weight"  => $panel_weight,
-					                    "preferred" => $panal_preferred,
+					                    "preferred" => $this->getTrueAsT($panal_preferred),
 					                    "contact_id"    => $contact_id,
-					                    "assigned"  => $panel_assigned
-
+					                    "assigned"  => $this->getTrueAsT($panel_assigned)
 				                    )
 			                    ))
 		                    ));
 
 	                        echo " Assign {$location_id} ";
-	                        $this->jsonResult($InternalLocationVendorPanels->saveData($p1), $p1);
+		                    $res = $InternalLocationVendorPanels->saveData($p1);
+
+
+	                        $this->jsonResult($res, $p1);
 	                    }
 	                }
 
