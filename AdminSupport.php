@@ -2369,10 +2369,12 @@ class specials_AdminSupport extends specials_baseSpecials
 			$list = array(
 				"SELECT * FROM users where user_type=4"
 			);
+			$els[0] = array();
 		} else {
 			foreach($list as $t=>$name) {
 				$name = trim($name);
-				$list[$t] = "SELECT user_name, user_id, contact_id, user_type FROM users where user_name='{$name}' LIMIT 1";
+				$list[$t] = "SELECT user_name, user_id, contact_id, user_type FROM users where user_name=? LIMIT 1";
+				$els[$t] = array($name);
 			}
 		}
 
@@ -2386,7 +2388,7 @@ class specials_AdminSupport extends specials_baseSpecials
 			$has_header = false;
 
 			foreach($list as $t=>$sql) {
-				$data = $this->query( $sql )->getRows();
+				$data = $this->query($sql, $els[$t])->getRows();
 				foreach ( $data as $user ) {
 					echo "Processing {$user['user_name']} <br> ";
 					$dem++;
