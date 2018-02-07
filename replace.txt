@@ -1,0 +1,1620 @@
+<?php
+require_once('Utils.php');
+require_once('modules/remote/admin/users/ViewUser.php');
+require_once('classes/User.php');
+require_once('classes/AmcProductPricingRules.php');
+require_once('classes/SingleSignOn.php');
+require_once('classes/InputModifiers.php');
+require_once('classes/LenderPassword.php');
+
+abstract class ManageUser extends ViewUser{
+	public function __construct(){
+		$this->_setPermission('manage');
+	}
+
+	public function unlockUser($login) {
+		$LenderPassword = new LenderPassword();
+		$LenderPassword->unlockUser($login);
+		return "Unlocked Login for ".$login;
+	}
+
+	/**
+	 *  CX-2564 | require appraiser enter credit card information
+	 * @param $party_id
+	 * @return bool
+	 */
+	public function checkCCRequired($party_id) {
+		$User = $this->_getCurrentUser();
+		$res = array(
+			"required"  => 0
+		);
+		$wallet_id = $this->_getDAO('WalletDAO')->getWalletIdByVendorContactID($User->ContactID);
+		if($this->_getLocationConfig()->isEnabled('ENABLE_VENDOR_PAYMENT_PROCESSING',$party_id)) {
+            if(empty($wallet_id)) {
+                // config is on, but empty cc
+                $res['required'] = "cc_needed";
+            } else {
+                // config is on, but cc existing
+                $res['required'] = "cc_existing";
+            }
+            $res['cc'] = $this->getPaymentInfo($User->ContactID);
+		}
+		return $res;
+	}
+
+
+	/**
+	 * Save all data for the defined sections
+	 * @access protected
+	 * @param JSON object - data
+	 * @param array - sections
+	 * @return array 
+	 */
+	protected function _saveData($data, $sections) {
+		if(!is_array($data)) {
+			$data = json_decode($data, TRUE);
+		}
+		
+		// Override contact_id with current_user id for user account module
+		if($this->_isUserAccountModule()) {
+			$data['contact_id'] = $this->_getCurrentUser()->ContactID;
+		}
+
+		// Set the contact_id and user_id
+		if(!empty($data['contact_id'])) {
+			$this->_setContactId($data['contact_id']);
+			$this->_setUserId($this->_getDAO('UsersDAO')->GetUserIDByContactID($data['contact_id']));
+
+			// Validate if the contact belongs to the right user_type/contact_type
+			if(!$this->_validContact($data['contact_id'])) return FALSE;
+		}
+
+		foreach($data['data'] as $arr) {
+			// ONLY process the sections that are defined for the module
+			if(in_array($arr['section'], $sections)) {
+				switch ($arr['section']) {
+					case 'contact_info':
+						$return_arr['contact_info'] = $this->_saveGeneralInfo($arr['data']);
+						break;
+					case 'vendor_settings':
+						$return_arr['vendor_settings'] = $this->_saveVendorSettings($arr['data']);
+						break;
+					case 'companies':
+						$return_arr['companies'] = $this->_saveCompanies($arr['data']);
+						break;
+					case 'locations':
+						$return_arr['locations'] = $this->_saveLocations($arr['data']);
+						break;
+					case 'work_roles':
+						$return_arr['work_roles'] = $this->_saveWorkRoles($arr['data']);
+						break;
+					case 'admin_roles':
+						$return_arr['admin_roles'] = $this->_saveAdminRoles($arr['data']);
+						break;
+					case 'geopoints':
+						$return_arr['geopoints'] = $this->_updateGeopoint($arr['data']);
+						break;
+					case 'documents':
+						$return_arr['documents'] = $this->_updateDocument($arr['data']);
+						break;
+					case 'state_specific':
+						$return_arr['state_specific'] = $this->_saveStateSpecific($arr['data']);
+						break;	
+					case 'notes':
+						$return_arr['notes'] = $this->_addNote($arr['data']);
+						break;
+					case 'licenses':
+						$return_arr['licenses'] = $this->_saveLicenses($arr['data']);
+						break;
+					case 'insurance':
+						$return_arr['insurance'] = $this->_saveInsurance($arr['data']);
+						break;
+					case 'assignment_criteria':
+						$return_arr['assignment_criteria'] = $this->_saveAssignmentCriteria($arr['data']);
+						break;	
+					case 'allowed_property_types':
+						$return_arr['allowed_property_types'] = $this->_saveAllowedPropertyTypes($arr['data']);
+						break;
+					case 'allowed_loan_types':
+						$return_arr['allowed_loan_types'] = $this->_saveAllowedLoanTypes($arr['data']);
+						break;
+					case 'allowed_product_types':
+						$return_arr['allowed_product_types'] = $this->_saveAllowedProductTypes($arr['data']);
+						break;	
+					case 'pricing':
+						$return_arr['pricing']	= $this->_updatePricing($arr['data']);
+						break;
+					case 'location_pricing':
+						$return_arr['location_pricing']	= !empty($arr['data']['party_id'])
+							? $this->_updatePricing($arr['data'], $arr['data']['party_id'])
+							: array('successful' => FALSE);
+						break;
+                    case 'contact_vacations':
+                        $return_arr['contact_vacations'] = $this->_updateContactVacations($arr['data']);
+                        break;
+                    case 'payment_info':
+                        $return_arr['payment_info']	= $this->_savePaymentInfo($arr['data']);
+                        break;
+					default:
+						
+						break;
+				}					
+			}	
+		}
+		return $return_arr;
+	}
+
+    protected function _updateContactVacations($data) {
+        if(!isset($data['contact_id'])){
+            $data['contact_id'] = $this->_getContactId();
+        };
+        $Update = $this->_getDAO("ContactVacationsDAO")->updateVacation(array(
+            "contact_id"    => $data['contact_id'],
+            "start_date"    => $data['start_date'],
+            "end_date"      => $data['end_date']
+        ));
+        return $Update;
+    }
+
+	public function checkUsername($user_name, $contact_id=NULL) {
+		$global_user = $this->_getDAO('GlobalUsersDAO')->GetByUsername($user_name);
+		// No user with that user_name is found
+		if(empty($global_user->GLOBAL_USER_ID)) {
+			return array('duplicate' => FALSE);
+		}
+		// a user with the same user_name is found
+		else {
+			//is this user also in the local schema 
+			$LocalGlobalUserObj = $this->_getDAO('LocalGlobalUsersDAO')->GetByGlobalUserIdSchema($global_user->GLOBAL_USER_ID, Utils::GetSchema());
+			return array('duplicate' => true,'global_user_id' => $global_user->GLOBAL_USER_ID, 'contact_id' => $LocalGlobalUserObj->CONTACT_ID);
+		}
+	}
+	 
+	
+	
+	/**
+	 * Save 'Contact_info' section data
+	 * @access private
+	 * @param array - contact_info section's data
+	 * @return array
+	 */
+	private function _saveGeneralInfo($data) {
+		try{
+			if($data['reset_password'] === TRUE) {
+				$contact_id = $this->_getContactId();
+				if(!empty($contact_id)) {
+					return array('successful'=> $this->_resetPassword($contact_id));	
+				}
+			}
+			else {
+			    // ST-26740 , only for Appraiser in My Account only. Optional for Admin Page
+                if($this->_getCurrentUser()->UserType == 4) {
+                    $errMsg = $this->validateAddress($data, true);
+                    if(sizeof($errMsg)>0){
+                        return array(
+                            'successful'=> false,
+                            'error'		=> $errMsg
+                        );
+                    }
+                }
+				$this->_getDAO('ContactsDAO')->StartTrans();
+				
+				$global_user = $this->_getDAO('GlobalUsersDAO')->GetByUsername($data['user_name']);
+				$LocalGlobalUserObj = $this->_getDAO('LocalGlobalUsersDAO')->GetByGlobalUserIdSchema($global_user->GLOBAL_USER_ID, Utils::GetSchema());
+				
+				if((is_numeric($this->_getContactID()) && $this->_getContactID() == $LocalGlobalUserObj->CONTACT_ID) || is_null($this->_getContactID())){
+				
+					// Check for duplicate user_name
+					//$duplicate = $this->checkUsername($data['user_name'], $this->_getContactId());
+					//if($duplicate['duplicate']) return $duplicate;
+					
+					// Create/save contact info
+					$arr = array('contact_id' => $this->_saveContactInfo($data));
+					
+					// Create/save user info
+					if($data['contact_only'] == FALSE) {
+						$arr['user_id'] = $this->_saveUserInfo($data);
+					}
+					
+					// Affiliate contact to a company
+					if(is_numeric($data['company_id'])){
+						$party_id = $this->_getDAO('PartyCompaniesDAO')->GetCompanyParties($data['company_id'])->fetchObject()->PARTY_ID;
+						$this->_savePartyContact($party_id);
+					}
+					
+					$this->_getDAO('ContactsDAO')->CompleteTrans();		
+					
+					return array(
+						'successful'=> TRUE,
+						'data'		=> $arr
+					);
+				
+				}else{
+					return array('successful' => false, 'message' => 'The contact_id for local_global_user does not match the contact_id you are changing.');		
+				}
+			}		
+			return array('successful' => FALSE);
+		}
+		catch (Exception $e){
+			$this->_getLogger()->error($e);
+			return array('successful' => FALSE);			
+		}	
+	}
+	
+		
+	/**
+	 * Save User's Information
+	 * @access private
+	 * @param array - user_info
+	 * @return integer - user_id
+	 */
+	private function _saveUserInfo($data) {
+		$obj->CREATE_DATE = 'now';
+		$obj->USER_TYPE = $this->_getUserType();		
+		$obj->CONTACT_ID = $this->_getContactId();
+		if(!empty($data['email'])) 				$obj->EMAIL = $data['email'];
+		if(!empty($data['time_zone']))			$obj->USER_TIMEZONE = $data['time_zone'];		
+		if(!empty($data['user_name']))			$obj->USER_NAME = $data['user_name'];				
+		if(!empty($data['secret_question']))	$obj->SECRET_QUESTION = $data['secret_question'];	
+		if(!empty($data['secret_answer']))		$obj->SECRET_ANSWER = $data['secret_answer'];
+		if(!empty($data['login_enabled'])) 		$obj->LOGIN_ENABLED_FLAG = $data['login_enabled'];			
+		
+		// We have the user_id, we will update the information
+		$user_id = $this->_getUserId();
+		
+		if(!empty($user_id)) {
+			$obj->USER_ID = $user_id;	
+			$new_user_obj = $this->_getDAO('UsersDAO')->Update($obj);
+			
+			// Update user in globa_users table
+			if(!empty($data['user_name'])) {
+				$gu_obj->GLOBAL_USER_ID = $this->_getDAO('LocalGlobalUsersDAO')->FindGlobalUserID(Utils::GetSchema(), $this->_getContactId());
+				$gu_obj->USER_NAME = $data['user_name'];	
+				$this->_getDAO('GlobalUsersDAO')->Update($gu_obj);						
+			}
+		}
+		// We do not have the user_id, we will create a new user
+		else {
+			$LenderPassword = new LenderPassword();
+			$obj->SALT = $LenderPassword->createRandomSalt();
+			$obj->PASSWORD_HASH = $LenderPassword->createHash($this->_getDAO('UsersDAO')->generatePassword(),$obj->SALT);
+
+			$new_user_obj = $this->_getDAO('UsersDAO')->Create($obj);
+			$this->_setUserId($new_user_obj->USER_ID);
+			
+			// Send Notification
+			$user = new User();		
+			$new_user = $user->FetchUser($this->_getUserId());
+			$user->SendNotification($new_user);
+			// check if there existing global_user_id first
+			$global_user_id = $this->_getDAO('GlobalUsersDAO')->GetUserId($obj->USER_NAME);
+			// Insert record to global_users table
+			if (empty($global_user_id)){
+				$gu_obj->FIRST_NAME = $data['first_name'];
+				$gu_obj->LAST_NAME = $data['last_name'];
+				$gu_obj->PASSWORD = $obj->PASSWORD_HASH;
+				$gu_obj->SALT = $obj->SALT;
+				$gu_obj->USER_NAME = $obj->USER_NAME;	
+				$this->_getDAO('GlobalUsersDAO')->Create($gu_obj);
+				$global_user_id = $this->_getDAO('GlobalUsersDAO')->GetUserId($obj->USER_NAME);
+			}
+			
+				// This password will be mark as temporary password
+			$this->_getDAO("GlobalUsersPasswordTrackingDAO")->updateTrackingHistory($global_user_id,$obj->PASSWORD_HASH,$obj->SALT, 't');
+			
+			// Insert record to local_global_users table
+			$lgu_obj->DATABASE_NAME = Utils::GetSchema();
+			$lgu_obj->CONTACT_ID = $this->_getContactId();
+			$lgu_obj->GLOBAL_USER_ID = $global_user_id;
+			$new_lgu_obj = $this->_getDAO('LocalGlobalUsersDAO')->Create($lgu_obj);
+			
+			// Add default role
+			switch ($this->_getUserType()) {
+				case 2: //AMC User
+					$ur_obj->ROLE_ID = Roles::AMC_USER; 
+					break;
+				case 3: // Broker
+					$ur_obj->ROLE_ID = Roles::BROKER; 
+					break;
+				case 4: // Appraiser
+					$ur_obj->ROLE_ID = Roles::APPRAISER; 
+					break;	
+				case 5: // External Review User
+					$ur_obj->ROLE_ID = Roles::QC_USER; 
+					break;			
+				default:				
+					break;
+			}
+			
+			if(!empty($ur_obj)) {
+				$ur_obj->USER_ID = $this->_getUserId();
+				$this->_getDAO('UsersRolesDAO')->Create($ur_obj);				
+			}
+		}
+			
+		return $this->_getUserId();	
+	}
+
+
+	/**
+	 * Save Contact's Information
+	 * @access private
+	 * @param array - user_info
+	 * @return integer - user_id
+	 */
+	private function _saveContactInfo($data) {
+		$obj = new \stdClass();
+		$obj->CONTACT_TYPE = $this->_getUserType();
+		$obj->FIRST_NAME = $data['first_name'];
+		$obj->MIDDLE_INITIAL = $data['middle_initial'];
+		$obj->LAST_NAME = $data['last_name'];		
+		$obj->CONTACT_EMAIL = $data['email'];	
+		$obj->OFFICE_PHONE = $data['office_phone'];
+		$obj->CELL_PHONE = $data['cell_phone'];
+		$obj->FAX_PHONE = $data['fax_phone'];
+		// regular address
+        $obj->ADDRESS1 = $data['address1'];
+        $obj->ADDRESS2 = $data['address2'];
+        $obj->CITY = $data['city'];
+		$obj->COUNTY = $data['county'];
+        $obj->STATE = $data['state'];
+        $obj->ZIPCODE = $data['zipcode'];
+        $obj->ZIPCODE_EXTENSION = $data['zipcode_extension'];
+
+        if(isset($data['mailing_address1'])) {
+        	// mailing address
+	        $obj->SAME_MAILING_FLAG = $data['same_mailing_flag'];
+	        $obj->MAILING_ADDRESS1 = $data['mailing_address1'];
+	        $obj->MAILING_ADDRESS2 = $data['mailing_address2'];
+	        $obj->MAILING_CITY = $data['mailing_city'];
+	        $obj->MAILING_STATE = $data['mailing_state'];
+	        $obj->MAILING_ZIPCODE = $data['mailing_zipcode'];
+	        $obj->MAILING_ZIPCODE_EXTENSION = $data['mailing_zipcode_extension'];
+        }
+
+		$obj->CONTACT_TIMEZONE = (isset($data['time_zone']) && !empty($data['time_zone']))? $data['time_zone'] : -5;	
+		if(!empty($data['company_name']))		$obj->COMPANY_NAME = $data['company_name'];
+		if(!empty($data['monthly_max'])) 		$obj->MONTHLY_MAX = $data['monthly_max'];				
+		if(!empty($data['phone_arguments']))	$obj->PHONE_ARGUMENTS = $data['phone_arguments'];
+		if(!empty($data['phone_rest_api']))		$obj->PHONE_REST_API = $data['phone_rest_api'];
+		if(!empty($data['login_enabled']))		$obj->ENABLED_FLAG = $data['login_enabled'];
+		if(!empty($data['preferred_flag']))		$obj->PREFERRED_FLAG = $data['preferred_flag'];		
+
+		$contact_id = $this->_getContactId();
+		// We have contact_id, update the record
+		if(!empty($contact_id)) {
+			// Update Contact List's preferred flag
+			if(isset($obj->PREFERRED_FLAG)) {
+                $this->_getDAO('ContactListsDAO')->updatePreferredFlag($contact_id, $obj->PREFERRED_FLAG);
+			}
+			
+			$obj->CONTACT_ID = $contact_id;
+			$new_contact_obj = $this->_getDAO('ContactsDAO')->Update($obj);						
+		}
+		// We do not have contact_id, insert a new record to contacts table 
+		else {
+			$obj->CREATE_DATE = 'now';
+			$new_contact_obj = $this->_getDAO('ContactsDAO')->Create($obj);	
+			$this->_setContactId($new_contact_obj->CONTACT_ID);
+			
+			// This is for assignment criteria, insurance info and document
+			// Before it was only for appraiser thus the name is appraiser_info 
+			// Now it is available for appraiser, LAP and Review Appraiser (user_type_id 4,1,5)
+			if(in_array($new_contact_obj->CONTACT_TYPE, array(1,4,5))){
+				$AIObj->CONTACT_ID = $this->_getContactId();
+				$this->_getDAO('AppraiserInfoDAO')->Create($AIObj);
+			}				
+		}
+		
+		// Update SSN
+		if(trim($data['ssn']) != "" && strpos(trim($data['ssn']),"*") === false ) {
+			$this->_getDAO("AppraiserInfoDAO")->updateSSN($this->_getContactId(), trim($data['ssn']));
+		}
+		return $this->_getContactId();
+	}
+
+
+	/**
+	 * Save Party Contact Information
+	 * @access private
+	 * @param integer - party_id
+	 */
+	private function _savePartyContact($party_id){
+		if(!$this->_getDAO('PartyContactsDAO')->doesPartyContactExist($party_id, $this->_getContactId())){
+			$obj->party_id = $party_id;
+			$obj->contact_id = $this->_getContactId();	
+			$this->_getDAO('PartyContactsDAO')->Create($obj);
+		}
+	}
+
+	/**
+	 * Save Party Contacts Information
+	 * @access private
+	 * @param array - party_ids
+	 */
+	private function _savePartyContacts($party_ids){
+		$this->_getDAO('PartyContactsDAO')->StartTrans();
+		$this->_getDAO('PartyContactsDAO')->DeletebyContact($this->_getContactId());
+
+		foreach($party_ids as $party_id){
+			unset($obj);
+			$obj->CONTACT_ID = $this->_getContactId();
+			$obj->PARTY_ID = $party_id;
+			$this->_getDAO('PartyContactsDAO')->Create($obj);
+		}
+		$this->_getDAO('PartyContactsDAO')->CompleteTrans();
+	}	
+
+	
+	/**
+	 * Save Contact Lists Information
+	 * @access private
+	 * @param array - party_ids
+	 * @param integer - contact_list_type_id
+	 */
+	private function _saveContactLists($party_ids, $contact_list_type_id) {
+		// Remove duplicate values
+		$party_ids = array_unique($party_ids);
+		
+		// Start Transaction
+		$this->_getDAO('ContactListsDAO')->StartTrans();
+		
+		$my_parties = $this->_getDAO('ContactListsDAO')->getPartiesByContactId($this->_getContactId(), NULL, $contact_list_type_id)->getRows();
+		$my_parties = convert2Dto1Darray($my_parties, NULL, 'list_owner_party_id');
+
+		// Delete old records that are not in the listEx
+		foreach($my_parties as $my_party_id) {
+			if(!in_array($my_party_id, $party_ids)) {
+				$obj->list_owner_party_id = $my_party_id;
+				$obj->contact_id = $this->_getContactId();
+				$obj->contact_list_type_id = $contact_list_type_id;
+				$this->_getDAO('ContactListsDAO')->Delete($obj);
+			}
+		}
+
+		// Add new records that are not in the table
+		$preferred_flag = $this->_getDAO('ContactsDAO')->Get($this->_getContactId())->PREFERRED_FLAG;
+		foreach($party_ids as $party_id) {
+			if(!in_array($party_id, $my_parties)) {
+				$obj->list_owner_party_id = $party_id;
+				$obj->contact_id = $this->_getContactId();
+				$obj->weight = 0;
+				$obj->contact_list_type_id = $contact_list_type_id;
+				$obj->preferred_flag = $preferred_flag;
+				$this->_getDAO('ContactListsDAO')->Create($obj);
+			}
+		}
+		
+		// Complete Transaction
+		$this->_getDAO('ContactListsDAO')->CompleteTrans();
+	}
+
+
+	/**
+	 * Save Vendor Settings data
+	 * @access private
+	 * @param array - 'Vendor Settings' section data
+	 * @return array 
+	 */
+	private function _saveVendorSettings($data) {
+		try{
+			// Vendor Settings Section ONLY available for Appraiser
+			if($this->_validContact($this->_getContactId()) && $this->_getUserType() == 4) {
+				$obj = new stdClass();
+				$obj->CONTACT_ID = $this->_getContactId();
+				if(isset($data['require_review'])) $obj->REVIEW_FLAG = $data['require_review'];
+				if(isset($data['require_qc'])) $obj->QC_FLAG = $data['require_qc'];
+				if(isset($data['process_payment'])) $obj->PROCESS_PAYMENT_FLAG = $data['process_payment'];
+				if(isset($data['enable_atr_generation'])) $obj->ENABLE_ATR_GENERATION = $data['enable_atr_generation'];
+                if(isset($data['enable_borrower_welcome_email'])) $obj->ENABLE_BORROWER_WELCOME_EMAIL = $data['enable_borrower_welcome_email'];
+                if(isset($data['send_borrower_appraisal_report'])) $obj->SEND_BORROWER_APPRAISAL_REPORT = $data['send_borrower_appraisal_report'];
+				$this->_getDAO('AppraiserInfoDAO')->Update($obj);
+				return array('successful'=> TRUE);				
+			}			
+		}
+		catch(Exception $e) {
+			$this->_getLogger()->error($e);
+			return array('successful' => FALSE);
+		}
+	}
+	
+	/**
+	 * Reload Locations for Role based Panel purposes
+	 */
+	private function _reloadLocations() {
+		$data = array(
+			'selected_options' => array_keys($this->_getDAO('PartyContactsDAO')->GetContactParties($this->_getContactId())->getAssoc()) 
+		);
+		$this->_saveLocations($data);
+	}
+	
+	/**
+	 * Save Locations Information
+	 * @access private
+	 * @param array of Party IDs
+	 * @return boolean
+	 */
+	private function _saveLocations($data){
+		try{
+			if($this->_validContact($this->_getContactId())) {
+				switch ($this->_getUserType()) {
+					case UsersTypes::INTERNAL_USER :
+					case UsersTypes::EXTERNAL_USER :
+					case UsersTypes::CONNEXIONS_INTERNAL_USER :
+						$all_locations = $this->_getDAO('PartiesDAO')->getEnabledLocations($this->_getUserType())->getAssoc();
+						$valid_locations = array_intersect(array_keys($all_locations), $data['selected_options']);
+						if(is_array($valid_locations)) {
+							// Save Party Contacts for Locations
+							$this->_savePartyContacts($valid_locations);
+							
+							// Save Contact Lists for Panels
+							$user_roles = $this->_getUserRoles($this->_getContactId());
+							if(in_array(Roles::REVIEW_APPRAISER, $user_roles)) {
+								$this->_saveContactLists($valid_locations, 2);
+							}
+							else {
+								$this->_getDAO('ContactListsDAO')->deleteByContactByType($this->_getContactId(), 2);
+							}
+							if(in_array(Roles::LENDER_APPRAISAL_PROCESSOR, $user_roles)) {
+								$this->_saveContactLists($valid_locations, 1);
+							}	
+							else {
+								$this->_getDAO('ContactListsDAO')->deleteByContactByType($this->_getContactId(), 1);
+							}						
+							return array('successful'=> TRUE);						
+						}						
+						break;
+						
+					case UsersTypes::APPRAISER :
+						$this->_saveContactLists($data['selected_options'], 0);	
+						return array('successful'=> TRUE);				
+						break;
+						
+					case UsersTypes::EXTERNAL_REVIEW_USER :
+						$this->_saveContactLists($data['selected_options'], 2);	
+						return array('successful'=> TRUE);				
+						break;
+					
+					default:					
+						break;
+				}
+			}
+		}
+		catch (Exception $e){
+			$this->_getLogger()->error($e);
+			return array('successful' => FALSE);			
+		}
+	}
+	
+	
+	/**
+	 * Save Companies data
+	 * @access private
+	 * @param array - 'companies' section data
+	 * @return array 
+	 */
+	private function _saveCompanies($data) {
+		try{
+			if($this->_validContact($this->_getContactId())) {
+				$all_companies = $this->_getDAO('CompaniesDAO')->GetCompanyPartiesByUserType($this->_getUserType())->GetAssoc();
+				$valid_companies = array_intersect(array_keys($all_companies), $data['selected_options']);
+				if(is_array($valid_companies)) {
+					$this->_savePartyContacts($valid_companies);
+					return array('successful'=> TRUE);
+				}				
+			}			
+		}
+		catch(Exception $e) {
+			$this->_getLogger()->error($e);
+			return array('successful' => FALSE);
+		}
+	}
+	
+	private function _refreshSections($new_roles) {
+		$roles_for_assignment = array(Roles::LENDER_APPRAISAL_PROCESSOR, Roles::REVIEW_APPRAISER);
+		//var_dump('$roles_for_assignment', $roles_for_assignment);
+
+		// Get Current User Roles
+		$current_roles = $this->_getUserRoles($this->_getContactId());
+		//var_dump('$current_roles', $current_roles);
+		//var_dump('$new_roles', $new_roles);
+		
+		foreach($roles_for_assignment as $role) {
+			// We are removing role(s) that require assignment related sections
+			// We need to refresh the sections	
+			if(in_array($role, $current_roles)) {
+				if(!in_array($role, $new_roles)) {
+					return TRUE;
+				}
+			}
+			// We are adding role(s) that require assignment related sections
+			// We need to refresh the sections
+			elseif(in_array($role, $new_roles)) {
+				return TRUE;
+			}			
+		}
+		return FALSE;
+	}
+	
+	/**
+	 * Save Work Roles
+	 * @access private
+	 * @param array - 'work roles' section data
+	 * @return array 
+	 */
+	private function _saveWorkRoles($data) {
+		try{
+			$user_id = $this->_getUserId();
+			// Only proceed it is a user (not a contact)
+			if(!empty($user_id)) {
+				// Check if we need to refresh sections
+				$refresh_sections = $this->_refreshSections($data['selected_options']);
+				
+				$work_roles = $this->_getDAO('RoleTypesDAO')->getWorkRolesByUserType($this->_getUserType())->GetAssoc();
+
+				// Start transaction
+				$this->_getDAO('UsersRolesDAO')->StartTrans();
+								
+				// Delete old users_roles records
+				$this->_getDAO('UsersRolesDAO')->DeleteRolesByUser($user_id, array_keys($work_roles));
+				
+				// Insert record for each valid selected roles
+				$valid_roles = array_intersect(array_keys($work_roles), $data['selected_options']);
+				foreach($valid_roles as $role_id) {
+					$obj->USER_ID = $user_id;
+					$obj->ROLE_ID = $role_id; 	
+					$this->_getDAO('UsersRolesDAO')->Create($obj);				
+				}
+				
+				// Complete Transaction
+				$this->_getDAO('UsersRolesDAO')->CompleteTrans();
+				
+				// Reload Locations
+				if($refresh_sections) $this->_reloadLocations();
+				
+				return array(
+					'successful'=> TRUE,
+					'refresh'	=> $refresh_sections
+				);				
+			}			
+		}
+		catch(Exception $e) {
+			$this->_getLogger()->error($e);
+			return array('successful' => FALSE);
+		}
+	}
+	
+
+	/**
+	 * Save Admin Roles
+	 * @access private
+	 * @param array - 'admin roles' section data
+	 * @return array 
+	 */
+	private function _saveAdminRoles($data) {
+		try{
+			$user_id = $this->_getUserId();
+			// Only proceed it is a user (not a contact)
+			if(!empty($user_id)) {
+				$admin_roles = $this->_getDAO('RoleTypesDAO')->getAdminRolesByUserType($this->_getUserType())->GetAssoc();
+
+				// Start transaction
+				$this->_getDAO('UsersRolesDAO')->StartTrans();
+								
+				// Delete old users_roles records
+				$this->_getDAO('UsersRolesDAO')->DeleteRolesByUser($user_id, array_keys($admin_roles));
+				
+				// Insert record for each selected roles
+				$valid_roles = array_intersect(array_keys($admin_roles), $data['selected_options']);
+				foreach($data['selected_options'] as $role_id) {
+					$obj->USER_ID = $user_id;
+					$obj->ROLE_ID = $role_id; 	
+					$this->_getDAO('UsersRolesDAO')->Create($obj);				
+				}
+				
+				// Complete Transaction
+				$this->_getDAO('UsersRolesDAO')->CompleteTrans();
+				
+				return array('successful' => TRUE);				
+			}			
+		}
+		catch(Exception $e) {
+			$this->_getLogger()->error($e);
+			return array('successful' => FALSE);
+		}
+	}
+	
+	
+	/**
+	 * Update Document
+	 * @access private
+	 * @param array - document
+	 * @return array
+	 */
+	private function _updateDocument($data) {
+		// Only proceed it is a valid contact
+		if($this->_validContact($this->_getContactId()) && !empty($data['action'])) {
+			if($data['action'] == 'add') {
+				return $this->_saveDocument($data);
+			}
+			elseif($data['action'] == 'delete') {
+				return $this->_deleteDocument($data);
+			}
+		}
+		return array('successful' => FALSE);
+	}
+	
+	
+	/**
+	 * Save Document
+	 * @access private
+	 * @param array - 'Documents' section data
+	 * @return array 
+	 */
+	private function _saveDocument($data) {
+		try{
+			$file = $this->_getUserUploadedFile();		
+			if(!empty($file)) {				
+				// Validate the document type
+				if(array_key_exists($data['doc_type'], $this->_getDocumentTypeFieldName())) {
+					$file_id = $this->_insertFile($data['doc_type'], $file);
+					
+					if(!empty($file_id)) {
+						$obj->CONTACT_ID = $this->_getContactId();
+						$obj->{$this->_getDocumentTypeFieldName($data['doc_type'])} = $file_id;
+						switch ($data['doc_type']){
+							case FormTypes::APPRAISER_LICENSE:
+								$obj->STATE = $data['state'];
+								$this->_getDAO('ContactLicenseDAO')->Update($obj);
+								break;
+							default:
+								$this->_getDAO('AppraiserInfoDAO')->Update($obj);
+								break;
+						}						
+						
+						return array(
+							'successful' 	=> TRUE,
+							'file_id'		=> $file_id
+						);	
+					}
+				}						
+			}			
+		}
+		catch(Exception $e) {
+			$this->_getLogger()->error($e);
+			return array('successful' => FALSE);
+		}		
+	}
+	
+
+	/**
+	 * Delete Document
+	 * @access private
+	 * @param array - document
+	 * @return array
+	 */	
+	private function _deleteDocument($data) {
+		try {
+			if(!empty($data['doc_type'])) {
+				$obj->CONTACT_ID = $this->_getContactId();
+				$obj->{$this->_getDocumentTypeFieldName($data['doc_type'])} = 0;
+				
+				switch ($data['doc_type']){
+					case FormTypes::APPRAISER_LICENSE:
+						$obj->STATE = $data['state'];
+						$this->_getDAO('ContactLicenseDAO')->Update($obj);
+						break;
+					default:		
+						$this->_getDAO('AppraiserInfoDAO')->Update($obj);
+						break;
+				}			
+
+				return array('successful' => TRUE);							
+			}		
+		}
+		catch(Exception $e) {
+			$this->_getLogger()->error($e);
+			return array('successful' => FALSE);
+		}		
+	}
+	
+				
+	/**
+	 * Add Note
+	 * @access private
+	 * @param array - Note
+	 * @return array
+	 */
+	private function _addNote($data) {
+		try {
+			// Only proceed it is a valid contact
+			if($this->_validContact($this->_getContactId()) && !empty($data['note'])) {
+				// Add Appraiser Note
+				$new_obj = $this->_getDAO('AppraiserNotesDAO')->addNote($this->_getContactId(), $this->_getCurrentUser()->ContactID, $data['note']);
+				return array(
+					'successful'	=> TRUE,
+					'data'			=> current($this->_getDAO('AppraiserNotesDAO')->getData($new_obj->APPRAISER_NOTES_ID)->getRows())
+				);
+			}			
+		}
+		catch(Exception $e) {
+			$this->_getLogger()->error($e);
+			return array('successful' => FALSE);
+		}
+	}
+	
+	
+	/**
+	 * Update Geopoint
+	 * @access private
+	 * @param array - geopoint
+	 * @return array
+	 */
+	private function _updateGeopoint($data) {
+		if($this->_validContact($this->_getContactId()) && !empty($data['action'])) {
+			if(in_array($data['action'], array('add', 'edit'))) {
+				return $this->_saveGeopoint($data);
+			}
+			elseif($data['action'] == 'delete') {
+				return $this->_deleteGeopoint($data);
+			}
+		}
+		return array('successful' => FALSE);
+	}
+	
+	
+	/**
+	 * Save Geopoint
+	 * Note: $data['action'] is required. Available value is 'add' or 'edit'
+	 * @access private
+	 * @param array - geopoint
+	 * @return array
+	 */	
+	private function _saveGeopoint($data) {
+		try {			
+			// Validate geo_type
+			if(array_key_exists($data['geo_type'], $this->_getGeoTypes(1))) {
+				$obj->CONTACT_ID = $this->_getContactId();
+				$fields = array('address1', 'address2', 'city', 'state', 'zipcode', 'geo_radius', 'county_name', 'geo_type');
+				foreach($fields as $field) { 
+					$obj->{strtoupper($field)} = isset($data[$field])? $data[$field] : NULL;
+				}
+				
+				// Get latitude and Longitude for point radius
+				if($data['geo_type'] == 'radius') {
+					require_once('classes/GeoCodeService.php');
+					$GeoCodeService = new GeoCodeService();
+					$address = $data['address1'].' '.$data['address2'].' '.$data['city'].' '.$data['state'].' '.$data['zipcode'];				
+					$geo_result = $GeoCodeService->GetGeo($address);
+					
+					// process the results
+					if ($geo_result != null) {
+						$obj->LATITUDE = $geo_result->LATITUDE;
+						$obj->LONGITUDE = $geo_result->LONGITUDE;
+					}
+				}
+				// Add a new geopoint
+				if($data['action'] =='add') {
+					$new_obj = $this->_getDAO('ContactAddressesDAO')->Create($obj);
+                    $this->_getDAO("ContactAddressesDAO")->updateGeoPoint($this->_getContactId(), null, 2);
+					return array(
+						'successful'	=> TRUE,
+						'data'			=> array('contact_address_id' => $new_obj->CONTACT_ADDRESS_ID)
+					);
+				}
+				// Update existing geopoint
+				elseif($data['action'] == 'edit' && !empty($data['contact_address_id'])) {
+					$obj->CONTACT_ADDRESS_ID = $data['contact_address_id'];
+					$this->_getDAO('ContactAddressesDAO')->Update($obj);
+                    $this->_getDAO("ContactAddressesDAO")->updateGeoPoint($this->_getContactId(), null , 2);
+					return array(
+						'successful'	=> TRUE,
+						'data'			=> array('contact_address_id' => $data['contact_address_id'])
+					);
+				}
+			}		
+		}
+		catch(Exception $e) {
+			$this->_getLogger()->error($e);
+			return array('successful' => FALSE);
+		}		
+	}
+
+
+	/**
+	 * Delete Geopoint
+	 * @access private
+	 * @param array - geopoint
+	 * @return array
+	 */	
+	private function _deleteGeopoint($data) {
+		try {			
+			//contact_address_id are required
+			if(!empty($data['contact_address_id'])) {			
+				// Check if the contact_address_id belongs to the right contact
+				if($this->_getContactId() == $this->_getDAO('ContactAddressesDAO')->Get($data['contact_address_id'])->CONTACT_ID) {
+					$obj->CONTACT_ADDRESS_ID = $data['contact_address_id'];
+					$this->_getDAO('ContactAddressesDAO')->Delete($obj);
+					return array('successful' => TRUE);					
+				}			
+			}		
+		}
+		catch(Exception $e) {
+			$this->_getLogger()->error($e);
+			return array('successful' => FALSE);
+		}		
+	}
+
+	private function _resetPassword($contact_id) {
+		try{
+			// send email for password change
+			$sso = new SingleSignOn();
+			$global_user_id = $sso->GetGlobalUserByUserId($contact_id, Utils::GetSchema());
+			if($global_user_id) {
+				return $sso->ResetPassword($global_user_id);
+			}
+			return FALSE;			
+		}
+		catch(Exception $e) {
+			$this->_getLogger()->error($e);
+			return FALSE;
+		}
+	}
+	
+	/**
+	* @param $data
+	* @return array|bool
+	*/
+	private function _saveLicenses($data){
+		try{
+			$Obj = new stdClass();
+			$Obj->CONTACT_ID 	= $this->_getContactID();
+			$Obj->STATE 		= $data['state'];
+		
+			if(!is_null($Obj->CONTACT_ID) && is_numeric($Obj->CONTACT_ID) && !is_null($Obj->STATE)){
+				// first check to see if you are adding a document
+				if($data['action'] && 'add' == $data['action'] && $data['doc_type'] ){
+					return $this->_updateDocument($data);
+				}
+				// check to see if you are deleting a document
+				elseif($data['action'] && 'delete' == $data['action'] && $data['doc_type'] ){
+					return $this->_updateDocument($data);
+				}
+				// if you are not adding a document to an existing record then check to see if you are adding a new license
+				elseif($data['action'] && 'add' == $data['action']){
+					return $this->addLicense($data);
+				}
+				// if you are not adding a new record then check to see if you are deleting a record
+				elseif($data['action'] && 'delete' == $data['action']){
+					return array(
+						'successful'=> true,
+						'results' 	=> $this->_getDAO('ContactLicenseDAO')->Delete($Obj)
+					);
+				}
+				// and if all else fails then update one of the column in the contact license table.
+				else{
+					return $this->editLicense($data);
+				}
+			}
+			return array(
+				'successful'=> false,
+				'msg' 		=> 'Missing Contact or State'
+			);
+		}
+		catch(Exception $e){
+			$this->_getLogger()->error($e);
+			return array('successful' => FALSE);
+		}
+	
+		return $return;
+	}
+
+	/**
+	 * @param array $data
+	 * @return stdClass
+	 */
+	private function buildLicenseObj($data) {
+		// Create Contact License
+		$Obj = new stdClass();
+		$Obj->CONTACT_ID 	= $this->_getContactID();
+		$Obj->STATE 		= $data['state'];
+		$Obj->ACTIVE_FLAG 	= $data['active_flag'];
+		$Obj->FHA_APPROVED_FLAG				= $data['fha_approved_flag'];
+		$Obj->APPRAISER_LICENSE_TYPES_ID	= $data['appraiser_license_types_id'];
+		$Obj->USER_OVERRIDE_FLAG			= $data['user_override_flag'] == 't';
+
+		// Get Data Inputted by user
+		if($Obj->USER_OVERRIDE_FLAG) {
+			$Obj->LICENSE_NUMBER 		= $data['license_number'];
+			$Obj->LICENSE_ISSUE_DT 	    = $data['license_issue_dt'];
+			$Obj->LICENSE_EFF_DT 		= $data['license_eff_dt'];
+			$Obj->LICENSE_EXP_DT 		= $data['license_exp_dt'];
+			return $Obj;
+		}
+		// Get Data straight from ASC.gov
+		else {
+			// Check ASC.gov
+			$appraisalSubcommittee = new AppraisalSubcommittee();
+			$asc = $appraisalSubcommittee->getAppraiserInfo($this->_getContactId(), $data['license_number'], $data['state'], $data['appraiser_license_types_id']);
+
+			// Proceed if we find a matching
+			if(isset($asc['lic_number']) && !empty($asc['lic_number'])) {
+				$contact = $this->_getDAO('ContactsDAO')->get($this->_getContactID());
+				$updateContact = new \stdClass();
+
+				// Update address
+				if(empty($contact->ADDRESS1) || empty($contact->CITY)  || empty($contact->STATE) || empty($contact->ZIPCODE)) {
+					$updateContact->ADDRESS1 = $asc['street'];
+					$updateContact->CITY = $asc['city'];
+					$updateContact->COUNTY = $asc['county'];
+					$updateContact->STATE = $asc['state'];
+					$updateContact->ZIPCODE = $asc['zip'];
+				}
+
+				// Update Company
+				if(empty($contact->MIDDLE_INITIAL)) $updateContact->MIDDLE_INITIAL = $asc['mname'];
+
+				// Update Company
+				if(empty($contact->COMPANY_NAME)) $updateContact->COMPANY_NAME = $asc['company'];
+
+				// Update Phone
+				if(empty($contact->OFFICE_PHONE)) $updateContact->OFFICE_PHONE = $asc['phone'];
+
+				if(!empty($updateContact)) {
+					// Update Contact
+					$updateContact->CONTACT_ID = $contact->CONTACT_ID;
+					$this->_getDAO('ContactsDAO')->Update($updateContact);
+
+					// Add Appraiser Note
+					$note = "User info has been updated with the information that we pulled from ASC.gov website.";
+					$this->_getDAO('AppraiserNotesDAO')->addNote($this->_getContactId(), $this->_getCurrentUser()->ContactID, $note);
+				}
+
+				// Get Issue Date
+				$issueDateTime = explode('T', $asc['issue_date']);
+				$issueDate = $issueDateTime[0];
+
+				// Get Effective Date
+				$effectiveDateTime = explode('T', $asc['eff_date']);
+				$effectiveDate = $effectiveDateTime[0];
+
+				// Get Expire Date
+				$expireDateTime = explode('T', $asc['exp_date']);
+				$expireDate = $expireDateTime[0];
+
+				$Obj->LICENSE_NUMBER 		= $asc['lic_number'];
+				$Obj->LICENSE_ISSUE_DT 		= $issueDate;
+				$Obj->LICENSE_EFF_DT 		= $effectiveDate;
+				$Obj->LICENSE_EXP_DT 		= $expireDate;
+				$Obj->ASC_CONFORM_TO_AQB 	= $asc['aqb_compliant'] == 'Yes';
+				$Obj->ASC_LAST_UPDATE		= 'now';
+
+				// Add Appraiser Note
+				$note = "License info is validated againsts ASC.gov.";
+				$this->_getDAO('AppraiserNotesDAO')->addNote($this->_getContactId(), $this->_getCurrentUser()->ContactID, $note);
+
+				return $Obj;
+			}
+		}
+	}
+
+	/**
+	 * @param array $data
+	 * @return array
+	 */
+	private function addLicense($data) {
+		$rs = $this->_getDAO('ContactLicenseDAO')->GetByContactIDAndState($this->_getContactID(), $data['state']);
+
+		while($ContactObj = $rs->fetchNextObject()){
+			if(is_numeric($ContactObj->CONTACT_ID)){
+				return array(
+					'successful'=> false,
+					'msg' 		=> 'Duplicate State License'
+				);
+			}
+		}
+
+		// Build License Object
+		$licenseObj = $this->buildLicenseObj($data);
+		// Proceed if we have licenseObj
+		if($licenseObj) {
+			return array(
+				'successful'=> true,
+				'results' 	=> $this->_getDAO('ContactLicenseDAO')->Create($licenseObj),
+				'options' 	=> $this->_getDAO('AppraiserLicenseTypesDAO')->Fill()->GetRows()
+			);
+		}
+		else {
+			return array(
+				'successful'=> false,
+				'msg' 		=> 'Can not find a matching appraiser in www.ASC.gov website'
+			);
+		}
+	}
+
+	/**
+	 * @param array $data
+	 * @return array
+	 */
+	private function editLicense($data) {
+		// Build License Object
+		$licenseObj = $this->buildLicenseObj($data);
+
+		// Proceed if we have licenseObj
+		if($licenseObj) {
+			// Place active orders on HOLD if the license is inactive
+			if($licenseObj->ACTIVE_FLAG == 'f') {
+				$orders = $this->_getDAO('AppraisalStatusHistoryDAO')->getAllActiveOrders($this->_getContactId());
+
+				if(!empty($orders) && is_array($orders)) {
+					foreach($orders as $order) {
+						if(Workflow::validAction($this->_getCurrentUser(), $order['appraisal_id'], WorkflowActions::HOLD_ORDER)) {
+							Workflow::action($this->_getCurrentUser(), $order['appraisal_id'], WorkflowActions::HOLD_ORDER, array(
+								'hold_type_id'	=> 17,
+								'hold_reason'	=> "Appraiser license deactivated manually"
+							));
+						}
+					}
+				}
+			}
+
+			// Log License Changes
+			$this->logLicenseChanges($licenseObj);
+			return array(
+				'successful'=> true,
+				'results' 	=> $this->_getDAO('ContactLicenseDAO')->Update($licenseObj),
+			);
+		}
+		else {
+			return array(
+				'successful'=> false,
+				'msg' 		=> 'Can not find a matching appraiser in www.ASC.gov website'
+			);
+		}
+	}
+
+	/**
+	 * @param object $data (License Data)
+	 */
+	private function logLicenseChanges($data) {
+		$oldData = $this->_getDAO('ContactLicenseDAO')->GetByContactIDAndState($data->CONTACT_ID, $data->STATE)->fetchObject();
+
+		$note = '';
+		foreach($data as $key => $val) {
+			switch ($key) {
+				case 'ACTIVE_FLAG' :
+					$old = $oldData->ACTIVE_FLAG == 'f'? 'inactive' : 'active';
+					$new = $val == 'f'? 'inactive' : 'active';
+					if($old != $new) $note .= "'Status' is changed from {$old} to {$new}; ";
+					break;
+				case 'FHA_APPROVED_FLAG' :
+					$old = $oldData->FHA_APPROVED_FLAG == 't'? 'yes' : 'no';
+					$new = $val == 't'? 'yes' : 'no';
+					if($old != $new) $note .= "'FHA Approved' is changed from {$old} to {$new}; ";
+					break;
+				case 'APPRAISER_LICENSE_TYPES_ID' :
+					$old = $this->_getDAO('AppraiserLicenseTypesDAO')->Get($oldData->APPRAISER_LICENSE_TYPES_ID)->LICENSE_TYPE;
+					$new = $this->_getDAO('AppraiserLicenseTypesDAO')->Get($val)->LICENSE_TYPE;
+					if($old != $new) $note .= "'Appraiser License Type' is changed from {$old} to {$new}; ";
+					break;
+				case 'USER_OVERRIDE_FLAG' :
+					$old = $oldData->USER_OVERRIDE_FLAG == 't'? 'yes' : 'no';
+					$new = $val? 'yes' : 'no';
+					if($old != $new) $note .= "'User Override' is changed from {$old} to {$new}; ";
+					break;
+				case 'LICENSE_NUMBER' :
+					if($oldData->LICENSE_NUMBER != $val) $note .= "'License Number' is changed from {$oldData->LICENSE_NUMBER} to {$val}; ";
+					break;
+				case 'LICENSE_ISSUE_DT' :
+					$old = !empty($oldData->LICENSE_ISSUE_DT)? @date("m-d-Y", strtotime($oldData->LICENSE_ISSUE_DT)) : '';
+					$new = $val;
+					if($old != $new) $note .= "'License Issue Date' is changed from {$old} to {$new}; ";
+					break;
+				case 'LICENSE_EFF_DT' :
+					$old = !empty($oldData->LICENSE_EFF_DT)? @date("m-d-Y", strtotime($oldData->LICENSE_EFF_DT)) : '';
+					$new = $val;
+					if($old != $new) $note .= "'License Effective Date' is changed from {$old} to {$new}; ";
+					break;
+				case 'LICENSE_EXP_DT' :
+					$old = !empty($oldData->LICENSE_EXP_DT)? @date("m-d-Y", strtotime($oldData->LICENSE_EXP_DT)) : '';
+					$new = $val;
+					if($old != $new)$note .= "'License Expire Date' is changed from {$old} to {$new}; ";
+					break;
+			}
+		}
+
+		// Add Appraiser Note
+		if(!empty($note)) $this->_getDAO('AppraiserNotesDAO')->addNote($this->_getContactId(), $this->_getCurrentUser()->ContactID, $note);
+	}
+
+	/**
+	* Save Insurance Section Info 
+	* @param $data
+	* @return array|bool
+	*/
+	private function _saveInsurance($data){
+		try{			
+			// Upload Document
+			if($data['doc_type']) {
+				return $this->_updateDocument($data);			
+			}
+			// Update info
+			else {
+				foreach($data as $key => $val) {
+					$key = strtoupper($key);
+					$appraiser_info_obj->$key = trim($val);
+				}	
+				
+				// Create/Update a record in appraiser_info table for the specified contact_id
+				if(is_object($appraiser_info_obj) && !empty($appraiser_info_obj)) {
+					$appraiser_info_obj->CONTACT_ID = $this->_getContactID();
+					$appraiser_info_obj->LAST_UPDATED = 'now';
+						
+					$current_obj = $this->_getDAO('AppraiserInfoDAO')->Get($this->_getContactID());
+					// Update existing record			
+					if($current_obj->CONTACT_ID) {
+						$result = $this->_getDAO('AppraiserInfoDAO')->Update($appraiser_info_obj);				
+					}
+					// Create a mew record
+					else {
+						$result = $this->_getDAO('AppraiserInfoDAO')->Create($appraiser_info_obj);
+					}
+					
+					return array('successful'=> true);
+				}				
+			}
+		}
+		catch(Exception $e){
+			$this->_getLogger()->error($e);
+			return array('successful' => FALSE);
+		}
+	}
+
+
+	/**
+	 * Save assignment criteria
+	 * @access private
+	 * @param array - 'assignment_criteria' section data
+	 * @return array
+	 */
+	private function _saveAssignmentCriteria($data){
+		try{	
+			// Only proceed if we have a valid contact_id	
+			if($this->_validContact($this->_getContactId())){
+				$obj->CONTACT_ID = $this->_getContactId();
+				
+				if (isset($data['max_appraisal_value'])){
+					$obj->MAX_APPRAISAL_VALUE = $data['max_appraisal_value']; 
+					$this->_getDAO('AppraiserInfoDAO')->Update($obj);
+				}
+				elseif (isset($data['direct_assign_enabled_flag'])){
+					$obj->DIRECT_ASSIGN_ENABLED_FLAG = $data['direct_assign_enabled_flag']; 
+					$this->_getDAO('AppraiserInfoDAO')->Update($obj);
+				}
+				elseif (isset($data['monthly_max'])){
+					$obj->MONTHLY_MAX = $data['monthly_max'];
+					$this->_getDAO('ContactsDAO')->Update($obj);
+				}
+				elseif (isset($data['assignment_threshold'])){
+					$obj->ASSIGNMENT_THRESHOLD = $data['assignment_threshold'];
+					$this->_getDAO('ContactsDAO')->Update($obj);
+				}
+				
+				return array('successful'=> TRUE);
+			}
+		}
+		catch(Exception $e){
+			$this->_getLogger()->error($e);
+			return array('successful' => FALSE);
+		}
+	}
+
+
+	/**
+	 * Save 'Allowed Property Types'
+	 * @access private
+	 * @param array - 'allowed_property_types' section data
+	 * @return array
+	 */
+	private function _saveAllowedPropertyTypes($data){
+		try{		
+			// Only proceed if we have a valid contact_id		
+			if($this->_validContact($this->_getContactId())){
+				$property_types_arr = $this->_getDAO('PropertyTypesDAO')->GetSelectOptions();
+				if(is_array($data['selected_options'])) {		
+					foreach($data['selected_options'] as $key=>$value){
+						unset($property_types_arr[$value]);
+					}
+				}
+
+				// Start transaction
+				$this->_getDAO('AppraisersDisallowedPropertyTypesDAO')->StartTrans();
+							
+				// Delete old records	
+				$this->_getDAO('AppraisersDisallowedPropertyTypesDAO')->DeleteByContactID($this->_getContactId());
+				
+				// Insert record for each disallowed property type
+				foreach($property_types_arr as $key=>$value){
+					$obj->CONTACT_ID = $this->_getContactId();
+					$obj->PROPERTY_TYPE_ID = $key;
+					$this->_getDAO('AppraisersDisallowedPropertyTypesDAO')->Create($obj);
+				}
+
+				// Complete Transaction
+				$this->_getDAO('AppraisersDisallowedPropertyTypesDAO')->CompleteTrans();
+								
+				return array('successful'=> TRUE);
+			}
+		}
+		catch (Exception $e){
+			$this->_getLogger()->error($e);
+			return array('successful' => FALSE);
+		}
+	}
+	
+	
+	/**
+	 * Save 'Allowed Loan Types'
+	 * @access private
+	 * @param array - 'allowed_loan_types' section data
+	 * @return array
+	 */
+	private function _saveAllowedLoanTypes($data){
+		try{
+			// Only proceed if we have a valid contact_id		
+			if($this->_validContact($this->_getContactId())){
+				$loan_types_arr = $this->_getDAO('LoanTypesDAO')->GetSelectOptions();
+				if(is_array($data['selected_options'])) {
+					foreach($data['selected_options'] as $key=>$value){
+						unset($loan_types_arr[$value]);
+					}					
+				}
+
+				// Start transaction
+				$this->_getDAO('AppraisersDisallowedLoanTypesDAO')->StartTrans();
+								
+				// Delete old records
+				$this->_getDAO('AppraisersDisallowedLoanTypesDAO')->DeleteByContactID($this->_getContactId());
+				
+				// Insert record for each disallowed loan type
+				foreach($loan_types_arr as $key => $value){
+					$obj->CONTACT_ID = $this->_getContactId();
+					$obj->LOAN_TYPE_ID = $key;
+					$this->_getDAO('AppraisersDisallowedLoanTypesDAO')->Create($obj);
+				}
+
+				// Complete Transaction
+				$this->_getDAO('AppraisersDisallowedLoanTypesDAO')->CompleteTrans();
+								
+				return array('successful'=> TRUE);
+			}
+		}
+		catch (Exception $e){
+			$this->_getLogger()->error($e);
+			return array('successful' => FALSE);
+		}
+	}
+
+
+	/**
+	 * Save 'Allowed Product Types'
+	 * @access private
+	 * @param array - 'allowed_product_types' section data
+	 * @return array
+	 */
+	private function _saveAllowedProductTypes($data){
+		try{		
+			// Only proceed if we have a valid contact_id		
+			if($this->_validContact($this->_getContactId())){
+				$product_types_arr = $this->_getDAO('AppraisalProductsDAO')->GetEnabledProducts()->getAssoc();
+				if(is_array($data['selected_options'])) {
+					foreach($data['selected_options'] as $key=>$value){
+						unset($product_types_arr[$value]);
+					}
+				}
+
+				// Start transaction
+				$this->_getDAO('AppraisersDisallowedProductTypesDAO')->StartTrans();
+				
+				// Delete old records				
+				$this->_getDAO('AppraisersDisallowedProductTypesDAO')->DeleteByContactID($this->_getContactId());
+				
+				// Insert record for each disallowed loan type
+				foreach($product_types_arr as $key=>$value){
+					$obj->CONTACT_ID = $this->_getContactId();
+					$obj->APPRAISAL_PRODUCT_ID = $key;
+					$this->_getDAO('AppraisersDisallowedProductTypesDAO')->Create($obj);
+				}
+				
+				// Complete Transaction
+				$this->_getDAO('AppraisersDisallowedProductTypesDAO')->CompleteTrans();
+								
+				return array('successful'=> TRUE);
+			}			
+		}
+		catch (Exception $e){
+			$this->_getLogger()->error($e);
+			return array('successful' => FALSE);;
+		}
+	}
+
+
+	/**
+	 * Update Pricing
+	 * @access private
+	 * @param array - data
+	 * @param integer - location_party_id
+	 * @return array
+	 */
+	private function _updatePricing($data, $location_party_id=NULL) {
+		try{
+			// Only proceed it is a valid contact
+			if($this->_validContact($this->_getContactId()) && !empty($data['action'])) {
+				switch ($data['action']) {
+					case 'upload':
+						return $this->_uploadPricing($location_party_id);
+						break;
+					case 'add':
+						return $this->_addPricing($data, $location_party_id);
+						break;	
+					case 'edit':
+						return $this->_editPricing($data);
+						break;		
+					case 'delete':
+						return $this->_deletePricing($data);
+						break;	
+					case 'export':
+						return $this->_exportPricing($location_party_id);
+						break;				
+					default:
+						break;
+				}
+			}
+			return array('successful' => FALSE);
+		}
+		catch (Exception $e){
+			$this->_getLogger()->error($e);
+			return array('successful' => FALSE);			
+		}
+	}
+
+
+	/**
+	 * Upload and process 'Location Pricing' file
+	 * @access private
+	 * @param integer - location_party_id
+	 * @return array
+	 */
+	private function _uploadPricing($location_party_id=NULL){
+		// Process uploaded file
+		$file = $this->_getUserUploadedFile();		
+		if(!empty($file)) {
+			$AmcProductPricingRules = new AmcProductPricingRules;
+			$AmcProductPricingRules->uploadFile($file['tmp_name'], NULL, $this->_getContactId(), $location_party_id);
+			return array('successful' => TRUE);
+		}
+	}
+
+	/**
+	 * Export 'Location Pricing' to excel file
+	 * @access private
+	 * @param integer - location_party_id
+	 * @return array
+	 */
+	private function _exportPricing($location_party_id=NULL){
+		$AmcProductPricingRules = new AmcProductPricingRules;
+		$AmcProductPricingRules->exportRules('pricing_rules', NULL, $this->_getContactId(), $location_party_id);
+		//return array('successful' => TRUE);
+	}
+	
+				
+	/**
+	 * Add 'Location Pricing' data
+	 * @access private
+	 * @param array = 'location_pricing' section data
+	 * @param integer - location_party_id
+	 * @return array
+	 */
+	private function _addPricing($data, $location_party_id=NULL){
+		
+		// Product name is required
+		if(!empty($data['product_name'])) {
+			$AmcProductPricingRules = new AmcProductPricingRules;
+			$new_obj = $AmcProductPricingRules->createRule($data, NULL, $this->_getContactId(), $location_party_id);
+			return array(
+				'successful'=> TRUE,
+				'data'		=> array(
+					'id'	=> $new_obj->AMC_PRODUCT_PRICING_RULE_ID
+				)
+			);			
+		}
+	}
+	
+	
+	/**
+	 * Edit 'Location Pricing' data
+	 * @access private
+	 * @param array = 'location_pricing' section data
+	 * @return array
+	 */
+	private function _editPricing($data){
+		if(!empty($data['id'])) {
+			$obj->AMC_PRODUCT_PRICING_RULE_ID = $data['id'];
+			$obj->AMOUNT = $data['amount'];
+			$obj->IS_QUOTE_FLAG = $data['is_quote'];
+			$this->_getDAO('AMCProductPricingRulesDAO')->Update($obj);			
+			return array('successful'=> TRUE);			
+		}
+	}
+
+	
+	/**
+	 * Delete 'Location Pricing' record
+	 * @access private
+	 * @param array = 'location_pricing' section data
+	 * @return array
+	 */
+	private function _deletePricing($data){
+		if(!empty($data['id'])) {
+			$obj->AMC_PRODUCT_PRICING_RULE_ID = $data['id'];
+			$this->_getDAO('AMCProductPricingRulesDAO')->Delete($obj);			
+			return array('successful'=> TRUE);			
+		}
+	}
+
+	/**
+	 * @param $data
+	 * @return array
+	 */
+	public function savePaymentInfo($data) {
+		return $this->_savePaymentInfo($data);
+	}
+	
+
+	/**
+	 * Save 'payment_info' section data
+	 * @access private
+	 * @param array - payment_info section's data
+	 * @return array
+	 */	
+	protected function _savePaymentInfo($data,$delete_old_cc = false) {
+		try{
+            if($delete_old_cc == true) {
+                // incase can't update by UTF-8 encoding, remove existing one and do saving again;
+                $obj = new stdClass;
+                $contact_id = $this->_getContactId();
+                $obj->WALLET_ID = $this->_getDAO("WalletDAO")->getWalletIdByVendorContactID($contact_id);
+                $this->_getDAO("WalletDAO")->Delete($obj);
+            }
+			$obj = new stdClass;
+			$obj->BILLING_NAME = $data['billing_name'];
+			$obj->BILLING_ADDRESS1 = $data['billing_address1'];
+			$obj->BILLING_CITY = $data['billing_city'];
+			$obj->BILLING_STATE = $data['billing_state'];
+			$obj->BILLING_ZIP = $data['billing_zip'];
+			$obj->USER_ID = $this->_getCurrentUser()->UserID;
+			$obj->VENDOR_CONTACT_ID = $this->_getContactId();
+			$obj->PAYMENT_TYPE_ID = 1; // Credit Card
+			$obj->CREDIT_CARD_NUMBER = is_numeric($data['credit_card_number']) && in_array(strlen($data['credit_card_number']), array(15,16))
+				? $data['credit_card_number']
+				: '';
+			$obj->CREDIT_CARD_EXPIRATION_MONTH = $data['credit_card_expiration_month'];
+			$obj->CREDIT_CARD_EXPIRATION_YEAR = $data['credit_card_expiration_year'];
+			$obj->CREDIT_CARD_TYPE_ID = $data['credit_card_type_id'];
+			$wallet_id = $this->_getWallet()->saveDataForVendorContact($obj)->WALLET_ID;
+			return array('successful'=> !empty($wallet_id));
+		}
+		catch (Exception $e){
+			$this->_getLogger()->error($e);
+            $result = print_r($e,true);
+            if(strpos($result,'UTF8') !== false && $delete_old_cc == false ) {
+                // can't update because UTF8 encoding problem on existing row, delete and try insert again
+                return $this->_savePaymentInfo($data,true);
+            }
+
+		}
+		return array('successful' => FALSE);
+	}
+}
+
+
