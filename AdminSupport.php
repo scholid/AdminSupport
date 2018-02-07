@@ -941,29 +941,43 @@ class specials_AdminSupport extends specials_baseSpecials
         if($username!="") {
             $user = $this->_getDAO("UsersDAO")->Execute("SELECT * FROM users where user_name=? ", array($username))->FetchObject();
             $contact_id = $user->CONTACT_ID;
-            $r = array();
-            $geo_type = strtolower($this->getValue("type","",$data));
-            $location = $this->getValue("location","",$data);
-            if (!empty($contact_id) && $geo_type!="" && $location!="") {
-                $p1= "";
-                switch($geo_type) {
-                    case "county":
-                        $t = explode(",",$location);
-                        $county = trim(strtoupper($t[0]));
-                        $state = trim(strtoupper($t[1]));
-                        if(!$state || $state == "") {
-                        	$state = $this->getValue("state","",$data);
-                        }
-                        echo $contact_id." => ".$county." => $state ==>";
-                        $p1 = '{"contact_id":'.$contact_id.',"data":[{"section":"geopoints","data":{"action":"add","geo_type":"county","state":"'.$state.'","county_name":"'.$county.'"}}]}';
 
-                        break;
-                }
-                if($p1!="") {
-                    echo " {$location} ";
-                    $Appraiser = new ManageAppraiserUser();
-                    $x = $this->jsonResult($Appraiser->saveData($p1), $p1);
-                }
+	        $address1 = $this->getValue("address1","",$data);
+	        $address2 = $this->getValue("address2","",$data);
+	        $city = $this->getValue("city","",$data);
+	        $state = $this->getValue("state","",$data);
+	        $zipcode = $this->getValue("zipcode","",$data);
+	        $geo_radius = $this->getValue("geo_radius","",$data);
+	        $county_name = $this->getValue("county_name","",$data);
+	        $geo_type = $this->getValue("geo_type","",$data);
+
+            if (!empty($contact_id) && $geo_type!="") {
+            	$sql = "DELETE FROM contact_addresses WHERE contact_id=? AND geo_type=? AND state=? AND county_name=? AND city=? AND zipcode=? AND address1=? ";
+            	$this->query($sql, array(
+            		$contact_id, $geo_type, $state, $county_name, $city, $zipcode, $address1
+	            ));
+
+	            $p1 = json_encode(array(
+		            "contact_id"    => $contact_id,
+		            "data"          => array(array(
+			            "section"   => "geopoints",
+			            "data"      =>  array(
+			            	"action"    => "add",
+				            "geo_type"  => $geo_type,
+				            "state" => $state,
+				            "county_name"   => $county_name,
+				            "city"      => $city,
+				            "zipcode"   => $zipcode,
+				            "geo_radius" => $geo_radius,
+				            "address1"  => $address1,
+				            "address2"  => $address2
+			            )
+		            ))
+	            ));
+
+	            echo " DONE ";
+	            $Appraiser = new ManageAppraiserUser();
+	            $x = $this->jsonResult($Appraiser->saveData($p1), $p1);
 
             }
 
@@ -1452,7 +1466,6 @@ class specials_AdminSupport extends specials_baseSpecials
 								"data"          => array(array(
 									"section"   => "contact_info",
 									"data"      =>  array(
-										"global_user_id"    => $global_user_id,
 										"contact_only"  => false,
 										"user_name" => $username,
 										"first_name"    => $first_name,
@@ -1477,9 +1490,9 @@ class specials_AdminSupport extends specials_baseSpecials
 								))
 							));
 							$this->bad_p1 = $p1;
-							$Appraiser->saveData($p1);
+							$this->jsonResult($Appraiser->saveData($p1),$p1);
 
-						} catch(Exception $e) {
+						} catch(PDOException $e) {
 							echo $p1;
 							echo " Error On Creating User";
 							exit;
