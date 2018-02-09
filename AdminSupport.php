@@ -684,9 +684,10 @@ class specials_AdminSupport extends specials_baseSpecials
 			if (DAOFactory::getDAO('AppraisalStatusHistoryDAO')->GetCurrentStatus($appraisal_id) == AppraisalStatus::COMPLETED) {
 				$persistFile = true;
 			}
+			echo " DONE , please visit Appraisal Detail and refresh, get the file under File Section.";
 			/** @var FPDF $pdf */
 			$pdf = PayerInvoiceFactory::Create($appraisal_id, FormTypes::LENDER_INVOICE, $persistFile);
-			$pdf->Output('invoice_' . $appraisal_id . '_' . date('Ymdhis') . '.pdf', 'D');
+			@$pdf->Output('invoice_' . $appraisal_id . '_' . date('Ymdhis') . '.pdf', 'D');
 		}
     }
 
@@ -698,8 +699,9 @@ class specials_AdminSupport extends specials_baseSpecials
 		));
 		$appraisal_id = $this->getValue("appraisal_id","");
 		if(!empty($appraisal_id)) {
+			echo " DONE , please visit Appraisal Detail and refresh, get the file under File Section.";
 			$pdf = PayerInvoiceFactory::Create($appraisal_id, FormTypes::VENDOR_INVOICE);
-			$pdf->Output('vendor_invoice_' . $appraisal_id . '_' . date('Ymdhis') . '.pdf', 'D');
+			@$pdf->Output('vendor_invoice_' . $appraisal_id . '_' . date('Ymdhis') . '.pdf', 'D');
 		}
 	}
 
