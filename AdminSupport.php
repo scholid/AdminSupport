@@ -37,6 +37,7 @@ require_once('modules/remote/admin/locations/ManageInternalLocationVendorPanels.
 require_once('classes/Transmitter.php');
 require_once('modules/remote/admin/companies/ManageBrokerCompany.php');
 require_once ('classes/AmcProductPricingRules.php');
+require_once("classes/invoices/PayerInvoiceFactory.php");
 
 @include('Net/SFTP.php');
 
@@ -673,6 +674,34 @@ class specials_AdminSupport extends specials_baseSpecials
 
 
     }
+
+    public function menu_appraisals_invoices_generate_lender_invoice() {
+		$this->buildForm(array(
+			$this->buildInput("appraisal_id","Appraisal ID","text")
+		));
+		$appraisal_id = $this->getValue("appraisal_id","");
+		if(!empty($appraisal_id)) {
+			if (DAOFactory::getDAO('AppraisalStatusHistoryDAO')->GetCurrentStatus($appraisal_id) == AppraisalStatus::COMPLETED) {
+				$persistFile = true;
+			}
+			/** @var FPDF $pdf */
+			$pdf = PayerInvoiceFactory::Create($appraisal_id, FormTypes::LENDER_INVOICE, $persistFile);
+			$pdf->Output('invoice_' . $appraisal_id . '_' . date('Ymdhis') . '.pdf', 'D');
+		}
+    }
+
+
+
+	public function menu_appraisals_invoices_generate_vendor_invoice() {
+		$this->buildForm(array(
+			$this->buildInput("appraisal_id","Appraisal ID","text")
+		));
+		$appraisal_id = $this->getValue("appraisal_id","");
+		if(!empty($appraisal_id)) {
+			$pdf = PayerInvoiceFactory::Create($appraisal_id, FormTypes::VENDOR_INVOICE);
+			$pdf->Output('vendor_invoice_' . $appraisal_id . '_' . date('Ymdhis') . '.pdf', 'D');
+		}
+	}
 
     public function mass_sending_email() {
     	$username_list = $this->getValue("username_list","");
@@ -1985,6 +2014,8 @@ class specials_AdminSupport extends specials_baseSpecials
         }
         return $ids;
     }
+
+
 
     public function getPartyIdByLocation($location_name) {
         $sql = "SELECT * FROM parties where party_name=? ";
