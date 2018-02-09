@@ -1212,6 +1212,14 @@ class specials_AdminSupport extends specials_baseSpecials
 		    "enable_manual_assignment"  => "",
 		    "maximum_property_value"    => "",
 
+		    // vendor setting
+		    "process_payment" => "",
+		    "require_review" => "",
+		    "require_qc"  => "",
+		    "enable_atr_generation"  => "",
+		    "enable_borrower_welcome_email" => "",
+		    "send_borrower_appraisal_report"  => "",
+
 		    // locations
 		   // "locations" => 1, // multi A||B
 
@@ -1472,6 +1480,16 @@ class specials_AdminSupport extends specials_baseSpecials
 
             $r['location_ids'] = $this->getValue("location_ids","", $data);
             $r['allowed_loan_types'] = $this->getValue("allowed_loan_types","", $data);
+
+            // vendor setting
+	        $r['process_payment'] = $this->getValue("process_payment","", $data);
+	        $r['require_review'] = $this->getValue("require_review","", $data);
+	        $r['require_qc'] = $this->getValue("require_qc","", $data);
+	        $r['enable_atr_generation'] = $this->getValue("enable_atr_generation","", $data);
+	        $r['enable_borrower_welcome_email'] = $this->getValue("enable_borrower_welcome_email","", $data);
+	        $r['send_borrower_appraisal_report'] = $this->getValue("send_borrower_appraisal_report","", $data);
+
+
 
             if($r['class'] == "") {
                 echo " NO CLASS <br>";
@@ -1907,6 +1925,40 @@ class specials_AdminSupport extends specials_baseSpecials
 	                    echo " locations  ";
 	                    $this->jsonResult($Appraiser->saveData($p1), $p1);
 	                }
+
+
+
+		            // vendor setting
+		            $vendor_setting = array();
+		            if(!empty($r['process_payment'])) {
+			            $vendor_setting['process_payment'] = $this->getTrueAsT($r['process_payment']);
+		            }
+		            if(!empty($r['require_review'])) {
+			            $vendor_setting['require_review'] = $this->getTrueAsT($r['require_review']);
+		            }
+		            if(!empty($r['require_qc'])) {
+			            $vendor_setting['require_qc'] = $this->getTrueAsT($r['require_qc']);
+		            }
+		            if(!empty($r['enable_atr_generation'])) {
+			            $vendor_setting['enable_atr_generation'] = $this->getTrueAsT($r['enable_atr_generation']);
+		            }
+		            if(!empty($r['enable_borrower_welcome_email'])) {
+			            $vendor_setting['enable_borrower_welcome_email'] = $this->getTrueAsT($r['enable_borrower_welcome_email']);
+		            }
+		            if(!empty($r['send_borrower_appraisal_report'])) {
+			            $vendor_setting['send_borrower_appraisal_report'] = $this->getTrueAsT($r['send_borrower_appraisal_report']);
+		            }
+		            if(!empty($vendor_setting)) {
+			            $p1 = json_encode(array(
+				            "contact_id"    => $contact_id,
+				            "data"          => array(array(
+					            "section"   => "vendor_settings",
+					            "data"      =>  $vendor_setting
+				            ))
+			            ));
+			            $this->jsonResult($Appraiser->saveData($p1), $p1);
+		            }
+
 
 
 	                $x = array();
@@ -2503,6 +2555,14 @@ class specials_AdminSupport extends specials_baseSpecials
 								"assignment_threshold"      => $row['assignment_criteria']['assignment_threshold'],
 								"enable_manual_assignment"  => $row['assignment_criteria']['direct_assign_enabled_flag'],
 								"maximum_property_value"    => $row['assignment_criteria']['max_appraisal_value'],
+
+								// vendor setting
+								"process_payment" => $row['vendor_settings']['process_payment'],
+								"require_review" => $row['vendor_settings']['require_review'],
+								"require_qc"  => $row['vendor_settings']['require_qc'],
+								"enable_atr_generation"  => $row['vendor_settings']['enable_atr_generation'],
+								"enable_borrower_welcome_email" => $row['vendor_settings']['enable_borrower_welcome_email'],
+								"send_borrower_appraisal_report"  => $row['vendor_settings']['send_borrower_appraisal_report'],
 
 								// locations
 								// "locations" => implode(",", $row['locations']), // multi A||B
