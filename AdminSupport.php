@@ -952,6 +952,19 @@ class specials_AdminSupport extends specials_baseSpecials
 
     }
 
+    public function menu_tools_files_fix_null_md5() {
+    	$sql = "select file_id, md5 FROM file_metadata where md5 is null";
+    	$files = $this->query($sql)->getRows();
+    	foreach($files as $file) {
+    		$file_id = $file['file_id'];
+    		$md5 = md5($this->_getDAO('FilesDAO')->GetFileByID($file_id)->FILE_DATA);
+    		$sql = "UPDATE file_metadata set md5=? where file_id=? ";
+    		$this->query($sql,array($md5,$file_id));
+    		echo "FILE ID {$file_id} => {$md5} <br>";
+	    }
+	    echo "DONE";
+    }
+
     public function getWebServicesUser() {
         $web_service_user_id = $this->_getDAO('UsersDAO')->GetUserId('WebServiceUser');
         $User = new User();
@@ -2457,13 +2470,14 @@ class specials_AdminSupport extends specials_baseSpecials
 		));
 		$type = $this->getValue("type","");
 		$list = explode("\n",$this->getValue("list",""));
+		$original_list = $this->getValue("list","");
 		if(empty($list)) {
 			$list = explode("\r",$this->getValue("list",""));
 			if(empty($list)) {
 				$list = explode(",",$this->getValue("list",""));
 			}
 		}
-		if(empty($list)) {
+		if(empty($list) || $original_list === "") {
 			$list = array(
 				"SELECT * FROM users where user_type=4 "
 			);
