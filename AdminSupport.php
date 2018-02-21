@@ -14,8 +14,8 @@ ini_set('display_errors', 1);
 ini_set('display_startup_errors', 1);
 ini_set('max_execution_time', 600);
 
-set_time_limit(600);
-ini_set('memory_limit', '512M');
+set_time_limit(1800);
+ini_set('memory_limit', -1);
 error_reporting(E_ALL & ~E_WARNING & ~E_NOTICE);
 
 require_once('pages/BasePage.php');
@@ -2772,6 +2772,56 @@ class specials_AdminSupport extends specials_baseSpecials
         }
     }
 
+    public function get_mapping_type_id($column_name, $table_name = "") {
+    	$html = "";
+    	switch($column_name) {
+		    case "role_type_id":
+		    	$html = $this->buildSelectOptionFromDAO("RoleTypesDAO");
+		    	break;
+		    case "action_id":
+			    $html = $this->buildSelectOptionFromDAO("WorkflowActionsDAO");
+		    	break;
+		    case "workflow_id":
+			    $html = $this->buildSelectOptionFromDAO("WorkflowsDAO");
+		    	break;
+		    case "start_status":
+		    case "end_status":
+			    $html = $this->buildSelectOptionFromDAO("StatusTypesDAO");
+		    	break;
+		    case "workflow_condition_id":
+			    $html = $this->buildSelectOptionFromDAO("WorkflowConditionsDAO");
+		    	break;
+	    }
+	    return $html;
+    }
+
+    public function getColumnsTable() {
+    	$table = $this->getValue("table","");
+		$columns = $this->getColumnsFromTable($table);
+		$html = "";
+	    $form = array();
+		foreach($columns as $c) {
+			if(strpos($c['column_default'],"::regclass" ) !== false) {
+				$default = "auto_key";
+			} else {
+				$default = $c['column_default'];
+			}
+
+			$select_data = $this->get_mapping_type_id($c['column_name'], $table);
+			if($select_data!="") {
+				$type = "select";
+				$default = $select_data;
+			} else {
+				$type = "text";
+			}
+			$form[] = $this->buildInput($c['column_name'], $c['column_name'] ." ({$c['data_type']}) ", $type ,$default);
+		}
+		$html = $this->buildForm($form, array("output" => true, "nosubmit" => true));
+		$html = str_replace("form","div", $html);
+		echo json_encode(array(
+			"html" => $html
+		));
+    }
 
     public function Execute($User)
     {
@@ -2782,7 +2832,7 @@ class specials_AdminSupport extends specials_baseSpecials
         }
         try {
             $this->user = $User;
-            if(in_array($action, array("JSPost","downloadFile"))) {
+            if(in_array($action, array("JSPost","downloadFile","getColumnsTable"))) {
                 call_user_func(array($this, $action));
                 exit;
             }
@@ -2841,12 +2891,14 @@ class specials_AdminSupport extends specials_baseSpecials
             try {
                 $this->query($sql);
                 $this->outputJSON(array(
-                    "update" => 1
+                    "update" => 1,
+                    "msg"   => "Inserted New record"
                 ));
             } catch(Exception $e) {
                 print_r($e);
                 $this->outputJSON(array(
-                    "update" => 3
+                    "update" => 3,
+                    "msg"   => "Error"
                 ));
             }
 
@@ -2867,7 +2919,8 @@ class specials_AdminSupport extends specials_baseSpecials
                     $update[] = $primary_id;
                     $this->query($sql,$update);
                     $this->outputJSON(array(
-                        "update" => 1
+                        "update" => 1,
+                        "msg"   => "Updated"
                     ));
 
                 }
@@ -2880,7 +2933,8 @@ class specials_AdminSupport extends specials_baseSpecials
                     $this->query($sql,$update);
 
                     $this->outputJSON(array(
-                        "update" => 1
+                        "update" => 1,
+	                    "msg"   => "Deleted"
                     ));
                 }
 
@@ -2891,13 +2945,15 @@ class specials_AdminSupport extends specials_baseSpecials
             } catch(Exception $e) {
                 print_r($e);
                 $this->outputJSON(array(
-                    "update" => 3
+                    "update" => 3,
+                    "msg"   => "Error"
                 ));
             }
 
         }
         $this->outputJSON(array(
-            "update" => 2
+            "update" => 2,
+            "msg"   => "data failed"
         ));
     }
     public function h4($text) {
@@ -3465,7 +3521,7 @@ class specials_AdminSupport extends specials_baseSpecials
     public function buildSelectOption($data) {
         $html = "";
         foreach($data as $key=>$value) {
-            $html .= "<option value='{$key}'> {$value} </option>";
+            $html .= "<option value='{$key}'> {$key} - {$value} </option>";
         }
         return $html;
     }
@@ -3511,17 +3567,17 @@ class specials_AdminSupport extends specials_baseSpecials
         switch ($type) {
             case "select":
                 $default = str_replace("'{$r}'", "'{$r}' selected",$default);
-                $html .= "<select  name={$id} id={$id} >{$default}</select>";
+                $html .= "<select data-auto-input='t' class='auto-input-g'  name={$id} id={$id} >{$default}</select>";
                 break;
             case "file" :
-                $html .=  " <input type=file name={$id} id={$id} > ";
+                $html .=  " <input data-auto-input='t'  class='auto-input-g'  type=file name={$id} id={$id} > ";
                 break;
             case "textarea":
-                $html .=  " <textarea style='width: 700px;height:300px;' name={$id} id={$id} >{$default}</textarea> ";
+                $html .=  " <textarea data-auto-input='t'  class='auto-input-g'  style='width: 700px;height:300px;' name={$id} id={$id} >{$default}</textarea> ";
                 break;
             case "text":
             default:
-                $html .=  " <input type=text name={$id} id={$id} value='{$r}' > ";
+                $html .=  " <input data-auto-input='t'  class='auto-input-g'  type=text name={$id} id={$id} value='{$r}' > ";
                 if($id == "appraisal_id") {
                     $html .= " <a href='/tandem/appraisal-details/?appraisal_id={$r}' target='_blank' id='a_appraisal_id'>Open Appraisal ID</a> ";
                 }
@@ -3588,14 +3644,30 @@ class specials_AdminSupport extends specials_baseSpecials
 	    }
         $action = isset($options['action']) ? $options['action'] : $_GET['action'];
         $confirm = isset($options['confirm']) ?  "confirm('Are you sure?')" : "true";
-        $html = "<form action='?action={$action}' method=post enctype='multipart/form-data' onsubmit=\"return {$confirm};\" ><table >";
+	    $attrs = "";
+	    foreach($options as $key=>$v) {
+			$attrs = " data-$key='{$v}' ";
+	    }
+        $html = "<form action='?action={$action}' {$attrs} method=post enctype='multipart/form-data' onsubmit=\"return {$confirm};\" ><table >";
         foreach($data as $input) {
             $html .= "<div >
                        {$input}
                 </div> ";
         }
-        $html .= "</table><br> <input type='submit' value='Submit'></form>";
-        echo $html;
+	    $submit = "<input type='submit' value='Submit'>";
+
+	    $nosubmit = isset($options['nosubmit']) ? $options['nosubmit'] : false;
+	    if($nosubmit) {
+	    	$submit = "";
+	    }
+        $html .= "</table><br> {$submit}</form>";
+		$return = isset($options['output']) ? $options['output'] : false;
+		if($return) {
+			return $html;
+		} else {
+			echo $html;
+		}
+
     }
 
     public function appraisal_refund() {
@@ -3758,7 +3830,19 @@ class specials_AdminSupport extends specials_baseSpecials
                             <button data-sql='$data_sql_id' data-table='$table' onclick='run_custom_sql(this);'>Run SQL</button> 
                             <button data-sql='$data_sql_id' data-table='$table' data-cols='".implode(", ",$cols)."' onclick='add_insert_into(this)'> Add INSERT INTO </button>
                             <button data-sql='$data_sql_id' data-table='$table' data-col-1='{$cols[0]}'  data-col-2='{$cols[1]}' onclick='add_delete_from(this)'> Add DELETE FROM </button>
-                            <button data-sql='$data_sql_id' data-table='$table' data-col-1='{$cols[0]}'  data-col-2='{$cols[1]}' onclick='add_update_from(this)'> Add Update </button>";
+                            <button data-sql='$data_sql_id' data-table='$table' data-col-1='{$cols[0]}'  data-col-2='{$cols[1]}' onclick='add_update_from(this)'> Add Update </button> 
+                            <button data-sql='$data_sql_id' data-table='$table' data-col-1='{$cols[0]}'  data-col-2='{$cols[1]}' onclick='build_insert_from(this)'> Build Insert Form </button> 
+                      <div id='form-{$data_sql_id}' style='display: none;margin:20px;'>
+                      	<div class='my_form'>
+                      	</div>
+                      	<div>
+                      		<button data-sql='$data_sql_id' data-table='$table' data-col-1='{$cols[0]}'  data-col-2='{$cols[1]}' onclick='create_insert_sql(this)'> Create Insert SQL </button> 
+                      		<button data-sql='$data_sql_id' data-table='$table' data-col-1='{$cols[0]}'  data-col-2='{$cols[1]}' onclick='cancel_sql_form(this)'> Close </button> 
+                      	</div>
+                      </div>
+                      
+</div>
+                            ";
         if(isset($options['viewOnly'])) {
             $sql_table = "";
         }
@@ -3792,6 +3876,9 @@ class specials_AdminSupport extends specials_baseSpecials
             }
             elseif(isset($_POST[$name])) {
                 $found = $_POST[$name];
+            }
+            elseif(isset($_REQUEST[$name])) {
+	            $found = $_REQUEST[ $name ];
             }
         }
 
@@ -4327,11 +4414,51 @@ function run_custom_sql(obj) {
              "sql"   : $(sql_table).val()
          }, function($json) {
                 console.log($json); 
-                alert($json);
+                alert($json.msg);
          });
     }
    
 } 
+
+function build_insert_from(obj) {
+     var table =  $(obj).attr("data-table");
+     var id = $(obj).attr("data-sql");
+     var form_id = $("#form-" + id).find(".my_form:first");
+    $.post("?action=getColumnsTable", {
+             "table": table
+         }, function($json) {
+        	$(form_id).html($json.html);
+        	$("#form-" + id).show();
+     });
+}
+
+function create_insert_sql(obj) {
+     var table =  $(obj).attr("data-table");
+     var id = $(obj).attr("data-sql");
+     var form_id = $("#form-" + id).find(".my_form:first");
+     var columns = "";
+     var data = "";
+     var v = "";
+     $.each(form_id.find("[data-auto-input=\'t\']"), function($i, $input){
+          v = $($input).val();
+          if(v !== "auto_key" && v!=="") {
+                columns += ", " + $($input).attr("name");
+          		data += ",\'" + $($input).val() + "\' ";
+          }
+        
+	 });
+     columns = columns.substr(1);
+     data = data.substr(1);
+     var sql = "INSERT INTO " + table + " (" + columns + ") VALUES (" + data + ")";
+     $("#" + id).html(sql);
+}
+
+function cancel_sql_form(obj) {
+     var table =  $(obj).attr("data-table");
+     var id = $(obj).attr("data-sql");
+     var form_id = $("#form-" + id);
+     $(form_id).hide();
+}
 
 $(function() {
     $("#appraisal_id").change(function() {        
