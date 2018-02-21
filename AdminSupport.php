@@ -3521,7 +3521,12 @@ class specials_AdminSupport extends specials_baseSpecials
     public function buildSelectOption($data) {
         $html = "";
         foreach($data as $key=>$value) {
-            $html .= "<option value='{$key}'> {$key} - {$value} </option>";
+        	if(is_numeric($key)) {
+        		$x = "{$key} - ";
+	        } else {
+        		$x = "";
+	        }
+            $html .= "<option value='{$key}'> {$x} {$value} </option>";
         }
         return $html;
     }
