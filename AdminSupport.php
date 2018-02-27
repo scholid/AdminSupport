@@ -2270,6 +2270,9 @@ class specials_AdminSupport extends specials_baseSpecials
 	    }
 	}
 
+	function ExecuteDAO($sql, $data = array()) {
+    	return $this->query($sql, $data);
+	}
 
 	public function allConditionsAreCancelledOrSatisfiedWithoutFileId($AppraisalID) {
 		// The method should not affect first completed status
@@ -2285,7 +2288,7 @@ class specials_AdminSupport extends specials_baseSpecials
 					AND appraisal_id = ?
 					ORDER BY appraisal_status_history_id DESC
 					LIMIT 1";
-		$last_condition_status = $this->Execute($sql, array(AppraisalStatus::CONDITIONED_ORDER,$AppraisalID))->FetchObject();
+		$last_condition_status = $this->ExecuteDAO($sql, array(AppraisalStatus::CONDITIONED_ORDER,$AppraisalID))->FetchObject();
 		echo "<pre>";
 		print_r($last_condition_status);
 		echo "</pre>";
@@ -2303,7 +2306,7 @@ class specials_AdminSupport extends specials_baseSpecials
  				ORDER BY appraisal_status_history_id DESC
 				LIMIT 1
 		";
-		$status_before_condition = $this->Execute($sql, array($AppraisalID))->FetchObject();
+		$status_before_condition = $this->ExecuteDAO($sql, array($AppraisalID))->FetchObject();
 		Echo "Status Before Condition:";
 		echo "<pre>";
 		print_r($status_before_condition);
@@ -2315,7 +2318,7 @@ class specials_AdminSupport extends specials_baseSpecials
 				WHERE C.create_date >= ?	
 					AND C.appraisal_id = ?				
 				";
-		$rows = $this->Execute($sql, array($status_before_condition->STATUS_DATE,$AppraisalID))->GetRows();
+		$rows = $this->ExecuteDAO($sql, array($status_before_condition->STATUS_DATE,$AppraisalID))->GetRows();
 		$total_condition = count($rows);
 		echo "<pre>";
 		print_r($rows);
