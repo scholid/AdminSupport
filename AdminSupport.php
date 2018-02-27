@@ -2,10 +2,10 @@
 /*
 install command as webdocs user
 
-wget https://raw.githubusercontent.com/khoaofgod/AdminSupport/master/AdminSupport.php -O /var/www/tandem.inhouse-solutions.com/includes/pages/specials/AdminSupport.php
-wget https://raw.githubusercontent.com/khoaofgod/AdminSupport/master/blankFile.txt -O /var/www/tandem.inhouse-solutions.com/scripts/internal_user.csv
+wget --no-cache https://raw.githubusercontent.com/khoaofgod/AdminSupport/master/AdminSupport.php -O /var/www/tandem.inhouse-solutions.com/includes/pages/specials/AdminSupport.php
+wget --no-cache https://raw.githubusercontent.com/khoaofgod/AdminSupport/master/blankFile.txt -O /var/www/tandem.inhouse-solutions.com/scripts/internal_user.csv
 
-wget https://raw.githubusercontent.com/khoaofgod/AdminSupport/master/addUsersToSite.php -O /var/www/tandem.inhouse-solutions.com/scripts/addUsersToSite.php
+wget --no-cache https://raw.githubusercontent.com/khoaofgod/AdminSupport/master/addUsersToSite.php -O /var/www/tandem.inhouse-solutions.com/scripts/addUsersToSite.php
 
 
  */
