@@ -2260,6 +2260,95 @@ class specials_AdminSupport extends specials_baseSpecials
 
     }
 
+	public function menu_tools_utils_check_conditions_function () {
+    	$appraisal_id = $this->getValue("appraisal_id","");
+    	$this->buildForm(array(
+    		$this->buildInput("appraisal_id","Appraisal ID","text", $appraisal_id)
+	    ));
+    	if(!empty($appraisal_id)) {
+    		$this->allConditionsAreCancelledOrSatisfiedWithoutFileId($appraisal_id);
+	    }
+	}
+
+
+	public function allConditionsAreCancelledOrSatisfiedWithoutFileId($AppraisalID) {
+		// The method should not affect first completed status
+		if($this->_getDAO("AppraisalStatusHistoryDAO")->TimesAppraisalHadThisStatus($AppraisalID,AppraisalStatus::COMPLETED) <= 1) {
+			echo "There is only 1 completed. Return FALSE";
+			return false;
+		}
+
+		// -- GET the Last Condition Status
+		$sql = "SELECT *
+					FROM appraisal_status_history 
+					WHERE status_type_id = ?
+					AND appraisal_id = ?
+					ORDER BY appraisal_status_history_id DESC
+					LIMIT 1";
+		$last_condition_status = $this->Execute($sql, array(AppraisalStatus::CONDITIONED_ORDER,$AppraisalID))->FetchObject();
+		echo "<pre>";
+		print_r($last_condition_status);
+		echo "</pre>";
+		if(!$last_condition_status->APPRAISAL_STATUS_HISTORY_ID) {
+			// never go to condition status again
+			echo "Never go to Condition Status again. Return FALSE";
+			return false;
+		}
+
+		// It went to condition again, so look for the status before the condition status
+		$sql = "SELECT * FROM appraisal_status_history
+ 				WHERE appraisal_status_history_id < ".$last_condition_status->APPRAISAL_STATUS_HISTORY_ID."
+ 				AND appraisal_id = ?
+ 				AND status_type_id NOT IN (10,13,16)
+ 				ORDER BY appraisal_status_history_id DESC
+				LIMIT 1
+		";
+		$status_before_condition = $this->Execute($sql, array($AppraisalID))->FetchObject();
+		Echo "Status Before Condition:";
+		echo "<pre>";
+		print_r($status_before_condition);
+		echo "</pre>";
+		// look for all added conditions from the status_before_condition -> STATUS_DATE
+		$sql = "SELECT CF.*, C.*
+				FROM conditions  AS C	
+				LEFT JOIN condition_files AS CF ON (C.condition_id = CF.condition_id)
+				WHERE C.create_date >= ?	
+					AND C.appraisal_id = ?				
+				";
+		$rows = $this->Execute($sql, array($status_before_condition->STATUS_DATE,$AppraisalID))->GetRows();
+		$total_condition = count($rows);
+		echo "<pre>";
+		print_r($rows);
+		echo "</pre>";
+		if($total_condition == 0) {
+			// no condition to check
+			echo " NO CONDITION TO CHECK - RETURN TRUE";
+			return true;
+		}
+		// start checking
+		$cancelled = 0;
+		$satisfied_without_file = 0;
+		foreach($rows as $condition) {
+			if($condition['is_cancelled_flag'] == "t") {
+				$cancelled++;
+			}
+			else if($condition['is_satisfied_flag'] == "t" && empty($condition['file_id'])) {
+				$satisfied_without_file++;
+			}
+		}
+
+		echo " Cancelled {$cancelled} / Satisfied without file {$satisfied_without_file} = Total {$total_condition} ";
+		if($satisfied_without_file + $cancelled == $total_condition) {
+			// cancelled all/some, and satisfied all/some without file
+			echo " RETURN TRUE ";
+			return true;
+		}
+
+		// conditions are not cancelled all, or all/some conditions are satisfied with a file
+		echo " RETURN FALSE ";
+		return false;
+	}
+
 
 
 
