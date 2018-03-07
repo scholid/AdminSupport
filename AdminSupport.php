@@ -224,6 +224,36 @@ class specials_AdminSupport extends specials_baseSpecials
     	return !empty($this->argv);
     }
 
+    // @todo
+    public function menu_appraisals_report_find_appraisals_by_products() {
+    	$sql = "select A.appraisal_id, ASH.status_date , A.street_number, A.street_name , A.city, A.state, A.zipcode, A.county, A.borrower1_first_name, A.borrower1_last_name, A.appraisal_appointment_time from 
+				msiretail.appraisals_products AS AP 
+				INNER JOIN msiretail.appraisals as A ON AP.appraisal_id=A.appraisal_id
+				INNER JOIN msiretail.appraisal_status_history as ASH ON A.appraisal_id = ASH.appraisal_id AND ASH.status_type_id=0 AND ASH.status_date >= '2017-01-01' AND ASH.status_date <= '2017-07-31'
+				where AP.appraisal_product_id IN (14)
+				and AP.is_deleted_flag IS FALSE
+				order by ASH.status_date ASC";
+    }
+
+    // @todo
+    public function menu_appraisals_appraiser_check_appraiser_address() {
+    	$appraisal_id = $this->getValue("appraisal_id","");
+	    $contact_id = $this->getValue("contact_id","");
+	    $company_id = $this->getValue("company_id","");
+    	$this->buildForm(array(
+    		$this->buildInput("appraisal_id","Appraisal ID","text", $appraisal_id),
+		    $this->buildInput("contact_id","OR Contact ID","text", $contact_id),
+		    $this->buildInput("company_id","OR Company ID","text", $company_id),
+	    ));
+    	if(!empty($appraisal_id)) {
+			$sql = "SELECT EAR.* , ER.engine_type_id, ER.completed_dt,  FROM
+					engine_request_appraisal AS ERA
+					JOIN  engine_request AS ER ON EAR.engine_request_id = EAR.engine_request_id
+					JOIN engine_event AS EE ON EE.engine_request_id = EAR.engine_request_id
+					";
+	    }
+    }
+
     public function importManageLocationPricing() {
     	echo "Example: file=path/file.csv party_id=1 reset=t schema=firstlook  \n";
     	echo "Excel columns: product_name | state | county | zip | amount | is_quote | username | party_id | amc_name \n\n";
@@ -3083,17 +3113,17 @@ class specials_AdminSupport extends specials_baseSpecials
         $script = $path."/addUsersToSite.php";
 
         $this->buildForm(array(
-            $this->buildInput("username","Username","text"),
-            $this->buildInput("email","Email","text"),
-            $this->buildInput("first_name","First Name","text"),
-            $this->buildInput("last_name","Last Name","text"),
-            $this->buildInput("user_type","User Type","text", 1),
-            $this->buildInput("roles","Roles","text", "1, 2"),
-            $this->buildInput("parties","Parties","text", "1"),
-            $this->buildInput("site","Sites","text", "all"),
-            $this->buildInput("reset_roles","Reset Roles","select", $this->buildSelectOption(array("f"=>"No","t"=>"Yes"))),
-            $this->buildInput("reset_contact","Reset Contact","select", $this->buildSelectOption(array("f"=>"No","t"=>"Yes"))),
-            $this->buildInput("deactivate","Deactivate","select", $this->buildSelectOption(array("f"=>"No","t"=>"Yes"))),
+            $this->buildInput("username","Username (username)","text"),
+            $this->buildInput("email","Email (email)","text"),
+            $this->buildInput("first_name","First Name (first_name) ","text"),
+            $this->buildInput("last_name","Last Name (last_name)","text"),
+            $this->buildInput("user_type","User Type (user_type , 1= lender, 6 =cx)","text", 1),
+            $this->buildInput("roles","Roles (roles , look up table below )","text", "1, 2"),
+            $this->buildInput("parties","Parties ( parties = 1) ","text", "1"),
+            $this->buildInput("site","Sites (sites = all , or schema name )","text", "all"),
+            $this->buildInput("reset_roles","Reset Roles (reset_roles, t or f)","select", $this->buildSelectOption(array("f"=>"No","t"=>"Yes"))),
+            $this->buildInput("reset_contact","Reset Contact ( reset_contact, t or f)","select", $this->buildSelectOption(array("f"=>"No","t"=>"Yes"))),
+            $this->buildInput("deactivate","Deactivate ( deactivate, t or f )","select", $this->buildSelectOption(array("f"=>"No","t"=>"Yes"))),
             $this->buildInput("mass_users_file","Mass CSV File Users","file"),
 	        $this->buildInput("mass_change_password","Mass CSV File Change Password","file"),
         ));
