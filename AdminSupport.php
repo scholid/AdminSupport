@@ -4728,9 +4728,10 @@ $(function() {
           </ul>
         </li>
               
-        <li class="dropdown"><a href="#"  class="dropdown-toggle" data-toggle="dropdown" role="button" aria-haspopup="true" aria-expanded="false">Workflows <span class="caret"></span></a>
+        <li class="dropdown"><a href="#"  class="dropdown-toggle" data-toggle="dropdown" role="button" aria-haspopup="true" 
+        aria-expanded="false">Workflows & Queues <span class="caret"></span></a>
                <ul class="dropdown-menu">
-                    <li><a href="?action=workflows">Workflows & Queues</a></li>
+                    <li><a href="?action=workflows">Workflows Lookup</a></li>
                     <li><a href="?action=appraisal_workflows_history">Appraisal Workflows History</a></li>
                     '.$this->buildAdminMenu("workflows").'   
                      <li role="separator" class="divider"></li> 
