@@ -929,6 +929,106 @@ class specials_AdminSupport extends specials_baseSpecials
 	    return $Generic->Execute($sql,$data);
     }
 
+    public function menu_workqueues_queue_workqueue_label() {
+        $sql = "SELECT L.label_id, L.label_name, L.conditions_operator, L.conditions_logic
+          FROM labels  AS L Where enabled_flag = true ";
+
+        $labels = $this->query($sql)->getRows();
+        foreach($labels as $i=>$label) {
+            $label_id = $label['label_id'];
+            $sql = "SELECT LC.label_condition_id, 
+	                LF.label_field_name, 
+	                LC.label_field_id ,
+	                O.operator, LC.field_values_obj , CK.config_key_name as enabled_by_config, 
+	                CK2.config_key_name as eabled_by_role_config
+	              FROM  label_conditions AS LC 
+                    LEFT JOIN label_fields AS LF ON LF.label_field_id = LC.label_field_id
+                    LEFT JOIN config_keys aS CK on CK.config_key_id = LC.enable_config 
+                    LEFT JOIN config_keys aS CK2 on CK2.config_key_id = LC.role_config 
+                    LEFT JOIN operators as O ON O.operator_id = LC.operator_id
+                    WHERE LC.label_id=?
+                    ";
+            $conditions = $this->query($sql,array($label_id))->GetRows();
+            $label['enabled_by_config'] = "";
+            $label['eabled_by_role_config'] = "";
+            foreach ($conditions as $condition) {
+                $condition_id = $condition['label_condition_id'];
+                $condition['field_values_obj_text'] = $condition['field_values_obj'];
+                switch($condition['label_field_name']) {
+                    case "status_type_id":
+                        $condition['field_values_obj_text'] = "";
+                        $status = json_decode($condition['field_values_obj'],true);
+                        if(!is_array($status)) {
+                            $status = array($status);
+                        }
+
+                        foreach($status as $t) {
+                            $status_name = $this->_getDAO("StatusTypesDAO")->getStatusNameByID(trim($t));
+                            $condition['field_values_obj_text'].= ", {$status_name}[{$t}]";
+                        }
+                        $condition['field_values_obj_text'] = "(".trim(ltrim($condition['field_values_obj_text'],",")).")";
+                        break;
+                }
+                $c = " {$condition['label_field_name']} {$condition['operator']} {$condition['field_values_obj_text']} ";
+
+                if(!empty($condition['enabled_by_config'])) {
+                    $label['enabled_by_config'] .= ", ".$condition['enabled_by_config'];
+                }
+                if(!empty($condition['eabled_by_role_config'])) {
+                    $label['eabled_by_role_config'] .= ", " . $condition['eabled_by_role_config'];
+                }
+                switch ($label['conditions_operator']) {
+                    case "MIX":
+                        $label['conditions_logic'] = str_replace("::{$condition_id}::", $c,trim($label['conditions_logic']) );
+                        $substr = 0;
+                        break;
+                    case "OR":
+                        $label['conditions_logic'] .= "OR ".$c;
+                        $substr = 2;
+                        break;
+                    case "AND":
+                    default:
+                        $label['conditions_logic'] .= "AND ".$c;
+                        $substr = 3;
+                        break;
+                }
+            }
+            $label['enabled_by_config'] = trim(ltrim($label['enabled_by_config'],","));
+            $label['eabled_by_role_config'] = trim(ltrim($label['eabled_by_role_config'],","));
+            $label['conditions_logic'] = substr($label['conditions_logic'], $substr);
+            $label['conditions_operator'] = "--REMOVE--";
+
+            // get roles
+            $sql = "SELECT * FROM label_roles as LR 
+                    LEFT JOIN commondata.role_types as RT ON LR.role_id = RT.role_type_id
+                    WHERE LR.label_id=? ";
+            $roles = $this->query($sql, array($label_id))->getRows();
+            $label['roles'] = "";
+            foreach($roles as $role) {
+                if(!empty($role['role_name'])) {
+                    $label['roles'].= ", ".$role['role_name'];
+                }
+            }
+            $label['roles'] = trim(ltrim($label['roles'],","));
+            $labels[$i] = $this->rebuildArray($label);
+
+        }
+
+        $this->buildJSTable($this->_getDAO("LabelsDAO"), $labels, array(
+            "viewOnly" => true
+        ));
+    }
+
+    public function rebuildArray($array) {
+        $res = array();
+        foreach($array as $key=>$value) {
+            if(!in_array($value, array("--REMOVE--"))) {
+                $res[$key] = $value;
+            }
+        }
+        return $res;
+    }
+
     public function mass_create_note() {
         $this->buildForm(array(
             $this->buildInput("appraisal_ids","Appraisals IDs","textarea"),
@@ -4630,9 +4730,11 @@ $(function() {
               
         <li class="dropdown"><a href="#"  class="dropdown-toggle" data-toggle="dropdown" role="button" aria-haspopup="true" aria-expanded="false">Workflows <span class="caret"></span></a>
                <ul class="dropdown-menu">
-                    <li><a href="?action=workflows">Workflows</a></li>
+                    <li><a href="?action=workflows">Workflows & Queues</a></li>
                     <li><a href="?action=appraisal_workflows_history">Appraisal Workflows History</a></li>
-                    '.$this->buildAdminMenu("workflows").'           
+                    '.$this->buildAdminMenu("workflows").'   
+                     <li role="separator" class="divider"></li> 
+                    '.$this->buildAdminMenu("workqueues").'          
               </ul>
         </li>
         <li class="dropdown"><a href="#"  class="dropdown-toggle" data-toggle="dropdown" role="button" aria-haspopup="true" aria-expanded="false">User Account <span class="caret"></span></a>
