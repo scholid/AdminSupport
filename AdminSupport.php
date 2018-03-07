@@ -3119,7 +3119,7 @@ class specials_AdminSupport extends specials_baseSpecials
             $this->buildInput("last_name","Last Name (last_name)","text"),
             $this->buildInput("user_type","User Type (user_type , 1= lender, 6 =cx)","text", 1),
             $this->buildInput("roles","Roles (roles , look up table below )","text", "1, 2"),
-            $this->buildInput("parties","Parties ( parties = 1) ","text", "1"),
+            $this->buildInput("parties","Parties ( parties = 1, or blank for vendor) ","text", "1"),
             $this->buildInput("site","Sites (sites = all , or schema name )","text", "all"),
             $this->buildInput("reset_roles","Reset Roles (reset_roles, t or f)","select", $this->buildSelectOption(array("f"=>"No","t"=>"Yes"))),
             $this->buildInput("reset_contact","Reset Contact ( reset_contact, t or f)","select", $this->buildSelectOption(array("f"=>"No","t"=>"Yes"))),
@@ -4637,11 +4637,11 @@ $(function() {
         </li>
         <li class="dropdown"><a href="#"  class="dropdown-toggle" data-toggle="dropdown" role="button" aria-haspopup="true" aria-expanded="false">User Account <span class="caret"></span></a>
                <ul class="dropdown-menu">
-                <li><a href="?action=remove_users">Deactivate Users</a></li>
-                <li><a href="?action=update_user_global">Update Users Global</a></li>                                                        
+                <li><a href="?action=remove_users">Deactivate Users</a></li>                                                                     
                 <li><a href="?action=change_username">Change Username</a></li>      
                   <!-- <li><a href="?action=login_as_user">Login as User</a></li> -->      
-                 <li role="separator" class="divider"></li>   
+                 <li role="separator" class="divider"></li>  
+                <li><a href="?action=update_user_global">Mass Update Users Global</a></li>  
                 <li><a href="?action=mass_create_appraisers">Mass Create Appraisers</a></li>    
                 <li><a href="?action=mass_sending_email">Mass Sending Emails</a></li>               
                 <li><a href="?action=searchUsers">Search & Export Users</a></li>
