@@ -3773,7 +3773,8 @@ class specials_AdminSupport extends specials_baseSpecials
                 $data_exe[] = $message_to;
             }
 
-            $sql = "SELECT A.appraisal_id, B.notification_job_id, B.job_completed_flag, B.subject, B.message_to , B.message_from, B.last_attempted_timestamp, E.event_date, B.bounce_flag , B.bounce_reason 
+            $sql = "SELECT A.appraisal_id, B.notification_job_id, B.job_completed_flag, B.subject, 
+B.body,  B.message_to , B.message_from, B.last_attempted_timestamp, E.event_date, B.bounce_flag , B.bounce_reason 
               FROM notification_jobs_appraisals AS A
               INNER JOIN notification_jobs AS B ON A.notification_job_id = B.notification_job_id
               INNER JOIN events as E ON B.event_id = E.event_id
