@@ -170,6 +170,21 @@ class specials_AdminSupport extends specials_baseSpecials
 		$pricing->countLines($file_name);
     }
 
+    public function globalUpdateConfig() {
+        foreach ($this->getAllSchema() as $schema=>$connection) {
+             $sql = "SELECT COUNT(*) as total FROM config_values where config_key_id=626 and party_id=1 ";
+             $total = $this->sqlSchema($schema,$sql)->fetchObject()->TOTAL;
+             echo "{$schema} = {$total} ";
+             if($total == 0) {
+                $config_value = '["2","1"]';
+                $sql = "INSERT INTO config_values (config_key_id, config_value, party_id) VALUES(626,?,1)";
+                $this->sqlSchema($schema,$sql, array($config_value));
+                echo " UPDATED ";
+             }
+             echo "<br>";
+        }
+    }
+
     public function fixConditionEmail() {
 
 
