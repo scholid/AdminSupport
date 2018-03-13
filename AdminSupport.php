@@ -3466,7 +3466,7 @@ class specials_AdminSupport extends specials_baseSpecials
                     );
                 }
 
-                if($options == "change") {
+                if($options == "change" && !empty($new_username) && !empty($username)) {
                     echo " Updated Users table <br>";
                     $this->query("UPDATE users SET user_name=? WHERE user_name=? ", array($new_username, $username));
                     $this->query("UPDATE commondata.global_users SET user_name=? WHERE user_name=? ", array($new_username, $username));
