@@ -239,6 +239,55 @@ class specials_AdminSupport extends specials_baseSpecials
     	return !empty($this->argv);
     }
 
+    public function menu_appraisals_status_change_to_any_status() {
+        $appraisal_id = $this->getValue("appraisal_id","");
+        $status_type_id = $this->getValue("status_type_id","");
+        $action_id = $this->getValue("action_id","");
+        $this->buildForm(array(
+            $this->buildInput("appraisal_id","Appraisal ID","text"),
+            $this->buildInput("action_id","Action ID","select",$this->buildSelectOptionFromDAO("WorkflowActionsDAO")),
+            $this->buildInput("status_type_id","Status Type ID", "select", $this->buildSelectOptionFromDAO("StatusTypesDAO"))
+        ), array(
+            "confirm"   => true
+        ));
+
+        if($appraisal_id > 0 && $status_type_id > 0 && $action_id > 0) {
+            $current_status = $this->getAppraisalCurrentStatus($appraisal_id);
+            $workflow_id = $this->getAppraisalObj($appraisal_id)->WORKFLOW_ID;
+            echo "Status :$current_status - Workflow: $workflow_id ";
+            if($current_status!=$status_type_id) {
+                $sql = "DELETE FROM workflow_role_actions
+                        WHERE role_type_id=1 AND action_id=".$action_id."
+                        AND workflow_id={$workflow_id}
+                        AND start_status={$current_status}
+                        AND end_status=".$status_type_id."
+                        AND workflow_condition_order=-100    ";
+
+                $this->query($sql);
+
+                $obj = new stdClass();
+                $obj->ROLE_TYPE_ID=1;
+                $obj->ACTION_ID=$action_id;
+                $obj->WORKFLOW_ID = $workflow_id;
+                $obj->START_STATUS = $current_status;
+                $obj->END_STATUS = $status_type_id;
+                $obj->WORKFLOW_CONDITION_ORDER=-100;
+
+                $this->_getDAO("WorkflowRoleActionsDAO")->Create($obj);
+                Workflow::action($this->getCurrentUser(), $appraisal_id, $action_id);
+
+                $this->query($sql);
+            }
+
+            if($this->getAppraisalCurrentStatus($appraisal_id) != $status_type_id) {
+                echo " ==> Can not move to {$status_type_id} ";
+            } else {
+                echo "=> Order moved to {$status_type_id}";
+            }
+        }
+
+    }
+
     // @todo
     public function menu_appraisals_report_find_appraisals_by_products() {
     	$sql = "select A.appraisal_id, ASH.status_date , A.street_number, A.street_name , A.city, A.state, A.zipcode, A.county, A.borrower1_first_name, A.borrower1_last_name, A.appraisal_appointment_time from 
