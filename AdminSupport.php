@@ -1704,7 +1704,7 @@ class specials_AdminSupport extends specials_baseSpecials
             } else {
                 echo $r['class']." => ";
             }
-	        $class = "Manage".$r['class'];
+	        $class = trim("Manage".preg_replace("/[^a-zA-Z0-9]+/","",$r['class']));
 	        $Appraiser = new $class();
 	        $first_name = $r['first_name'];
 	        $last_name = $r['last_name'];
