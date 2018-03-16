@@ -1697,7 +1697,7 @@ class specials_AdminSupport extends specials_baseSpecials
 	        $r['send_borrower_appraisal_report'] = $this->getValue("send_borrower_appraisal_report","", $data);
 
 
-
+            $r['class'] = trim($r['class']);
             if($r['class'] == "") {
                 echo " NO CLASS <br>";
                 return ;
@@ -4164,18 +4164,18 @@ B.body,  B.message_to , B.message_from, B.last_attempted_timestamp, E.event_date
         $found = null;
         foreach($name_list as $name) {
             if(!empty($data) && isset($data[$name])) {
-                $found =  $data[$name];
+                $found =  trim($data[$name]);
             }
             elseif(isset($_POST[$name])) {
-                $found = $_POST[$name];
+                $found = trim($_POST[$name]);
             }
             elseif(isset($_REQUEST[$name])) {
-	            $found = $_REQUEST[ $name ];
+	            $found = trim($_REQUEST[ $name ]);
             }
         }
 
         if(is_null($found)) {
-            $found = $default;
+            $found = trim($default);
         }
         return $found;
 
