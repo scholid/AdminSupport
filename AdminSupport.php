@@ -4895,6 +4895,7 @@ $(function() {
           <ul class="dropdown-menu">
             <li><a href="?action=table_data">Table Search</a></li>                                                   
             <li><a href="?action=search_table_has_column">Dev - Columns Look Up</a></li> 
+            <li>Server Name: '.gethostname().'</li>
           </ul>
         </li>        
       </ul>
