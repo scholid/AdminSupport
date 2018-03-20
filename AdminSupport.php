@@ -38,6 +38,7 @@ require_once('classes/Transmitter.php');
 require_once('modules/remote/admin/companies/ManageBrokerCompany.php');
 require_once ('classes/AmcProductPricingRules.php');
 require_once("classes/invoices/PayerInvoiceFactory.php");
+require_once("classes/Configs/LocationConfig.php");
 
 @include('Net/SFTP.php');
 
@@ -643,6 +644,25 @@ class specials_AdminSupport extends specials_baseSpecials
 		    $this->buildJSTable($this->_getDAO("UsersDAO"), $res, array("viewOnly"=>true ,"excel" => true));
 	    }
 
+    }
+
+    public function getConfigSchema($schema) {
+        $this->getAllSchema();
+        $connexion = $this->connections[$schema]['connection'];
+        return new SchemaLocationConfig($connexion);
+    }
+
+    public function testGetConfigSchema() {
+        $schemas = $this->getAllSchema();
+        foreach($schemas as $schema=>$connection) {
+            echo $schema . "<br>";
+            echo "<pre>";
+            $v = $this->getConfigSchema($schema)->getValue("SEND_BORROWER_APPRAISAL_REPORT",1);
+            echo $v;
+            echo "</pre>";
+            echo "<br>";
+
+        }
     }
 
     public function fixCompletedEmail() {
@@ -5405,3 +5425,17 @@ if(isset($_POST['json_excel'])) {
 /*
  * END FILE
  */
+
+class SchemaLocationConfig extends LocationConfig {
+    /** @var array */
+    private $location_configs;
+
+    /**
+     * LocationConfig constructor.
+     */
+    public function __construct($connectionObj)
+    {
+        parent::__construct();
+        $this->location_configs = DAOFactory::getDAO('ConfigKeysDAO', $connectionObj)->GetLocationConfigKeyIDs();
+    }
+}
