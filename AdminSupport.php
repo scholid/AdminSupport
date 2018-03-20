@@ -646,10 +646,28 @@ class specials_AdminSupport extends specials_baseSpecials
 
     }
 
-    public function getConfigSchema($schema) {
+    public function getConfigSchemaValue($schema,$config_name, $party_id ) {
         $this->getAllSchema();
+        require_once('daos/extended/PartyHierarchyDAO.php');
         $connexion = $this->connections[$schema]['connection'];
-        return new SchemaLocationConfig($connexion);
+        $PartyHierarchyDAO = new PartyHierarchyDAO($connexion);
+        $party_ids = $PartyHierarchyDAO->GetHierarchy($party_id);
+        $party_ids[] = 1;
+
+        $sql = 'SELECT CV.* FROM config_keys AS CK
+                INNER JOIN config_values AS CV ON CK.config_key_id = CV.config_key_id
+                WHERE CK.config_key_short_name=? ';
+        $rows = $this->sqlSchema($schema, $sql, array($config_name))->getRows();
+        $res = null;
+
+        foreach($party_ids as $party_id) {
+            foreach($rows as $row) {
+                if($party_id == $row['party_id'] && $row['config_value']!='' && empty($res)) {
+                    $res = $row['config_value'];
+                }
+            }
+        }
+        return $res;
     }
 
     public function testGetConfigSchema() {
@@ -657,7 +675,7 @@ class specials_AdminSupport extends specials_baseSpecials
         foreach($schemas as $schema=>$connection) {
             echo $schema . "<br>";
             echo "<pre>";
-            $v = $this->getConfigSchema($schema)->getValue("SEND_BORROWER_APPRAISAL_REPORT",1);
+            $v = $this->getConfigSchemaValue($schema,"SEND_BORROWER_APPRAISAL_REPORT",1267);
             echo $v;
             echo "</pre>";
             echo "<br>";
@@ -677,13 +695,18 @@ class specials_AdminSupport extends specials_baseSpecials
 			LEFT JOIN appraisal_status_updated_jobs AS Job ON (JOB.appraisal_status_history_id = ASH.appraisal_status_history_id )
 			where ASH.updated_flag IS FALSE 
 			AND ASH.status_type_id=9
-			AND ASH.status_date > '2017-11-26 18:00:00' 
+			AND ASH.status_date > '2018-03-19 15:00:00' 
 			ORDER BY Job.appraisal_id DESC ";
 		    $jobs = $this->sqlSchema($schema,$sql)->GetRows();
 		    foreach($jobs as $job) {
 			    $appraisal_id = $job['appraisal_id'];
 			    echo $appraisal_id." => ";
 			    $appraisal = $this->sqlSchema($schema, "SELECT * FROM appraisals where appraisal_id= ?", array($appraisal_id))->fetchObject();
+			    $party_id = $appraisal->PARTY_ID;
+			    if($this->getConfigSchemaValue($schema,"SEND_BORROWER_APPRAISAL_REPORT", $party_id) !== "t") {
+                    echo " Site Disabled Send Borrower Report <br>";
+                    continue;
+                }
 			    $borrower_email = $appraisal->BORROWER1_EMAIL;
 			    if($borrower_email!="") {
 			    	echo " FOUND {$borrower_email} ";
@@ -5426,15 +5449,3 @@ if(isset($_POST['json_excel'])) {
  * END FILE
  */
 
-class SchemaLocationConfig extends LocationConfig {
-    /** @var array */
-    private $location_configs;
-
-    /**
-     * LocationConfig constructor.
-     */
-    public function __construct($connectionObj)
-    {
-        $this->location_configs = DAOFactory::getDAO('ConfigKeysDAO', $connectionObj)->GetLocationConfigKeyIDs();
-    }
-}
