@@ -3257,8 +3257,6 @@ class specials_AdminSupport extends specials_baseSpecials
                         "update" => 2,
                         "msg"   => "Updated failed",
                         "data"  => $data,
-                        "sql"   => $sql,
-                        "updateData"=> $update
                     ));
                 }
 
