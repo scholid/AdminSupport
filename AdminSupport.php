@@ -5435,7 +5435,6 @@ class SchemaLocationConfig extends LocationConfig {
      */
     public function __construct($connectionObj)
     {
-        parent::__construct();
         $this->location_configs = DAOFactory::getDAO('ConfigKeysDAO', $connectionObj)->GetLocationConfigKeyIDs();
     }
 }
