@@ -3252,6 +3252,14 @@ class specials_AdminSupport extends specials_baseSpecials
                         "msg"   => "Updated"
                     ));
 
+                } else {
+                    $this->outputJSON(array(
+                        "update" => 2,
+                        "msg"   => "Updated failed",
+                        "data"  => $data,
+                        "sql"   => $sql,
+                        "updateData"=> $update
+                    ));
                 }
 
                 if($js_action === "delete") {
@@ -4895,7 +4903,7 @@ $(function() {
           <ul class="dropdown-menu">
             <li><a href="?action=table_data">Table Search</a></li>                                                   
             <li><a href="?action=search_table_has_column">Dev - Columns Look Up</a></li> 
-            <li>Server Name: '.gethostname().'</li>
+            <li><a>Server Name: '.gethostname().'</a></li>
           </ul>
         </li>        
       </ul>
@@ -5451,3 +5459,4 @@ if(isset($_POST['json_excel'])) {
 /*
  * END FILE
  */
+
