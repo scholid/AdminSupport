@@ -4215,18 +4215,18 @@ B.body,  B.message_to , B.message_from, B.last_attempted_timestamp, E.event_date
         $found = null;
         foreach($name_list as $name) {
             if(!empty($data) && isset($data[$name])) {
-                $found =  trim($data[$name]);
+                $found =  is_string($data[$name]) || is_numeric($data[$name]) ? trim($data[$name]): $data[$name];
             }
             elseif(isset($_POST[$name])) {
-                $found = trim($_POST[$name]);
+                $found = is_string($_POST[$name]) || is_numeric($_POST[$name]) ? trim($_POST[$name]) : $_POST[$name];
             }
             elseif(isset($_REQUEST[$name])) {
-	            $found = trim($_REQUEST[ $name ]);
+	            $found = is_string($_REQUEST[$name]) || is_numeric($_REQUEST[$name]) ? trim($_REQUEST[ $name ]) : $_REQUEST[ $name ];
             }
         }
 
         if(is_null($found)) {
-            $found = trim($default);
+            $found = is_string($default) || is_numeric($default) ? trim($default) : $default;
         }
         return $found;
 
