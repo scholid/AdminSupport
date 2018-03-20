@@ -3279,11 +3279,13 @@ class specials_AdminSupport extends specials_baseSpecials
                 ));
             }
 
+        } else {
+            $this->outputJSON(array(
+                "update" => 2,
+                "msg"   => "data failed {$table} {$primary_id} - {$primary_key} - {$js_action}",
+            ));
         }
-        $this->outputJSON(array(
-            "update" => 2,
-            "msg"   => "data failed"
-        ));
+
     }
     public function h4($text) {
         echo "<div style='text-align: center;'><h4>{$text}</h4></div>";
