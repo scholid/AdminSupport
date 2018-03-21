@@ -4238,6 +4238,17 @@ B.body,  B.message_to , B.message_from, B.last_attempted_timestamp, E.event_date
 
     }
 
+    public function menu_tools_delpoyment_update_support_tools() {
+        $filename = '/var/www/tandem.inhouse-solutions.com/includes/pages/specials/AdminSupport.php';
+        echo "Original File" . date ("F d Y H:i:s.", filemtime($filename));
+        echo " ";
+        echo filesize($filename)/1024;
+        exec('wget --no-cache https://raw.githubusercontent.com/khoaofgod/AdminSupport/master/blankFile.txt -O /var/www/tandem.inhouse-solutions.com/scripts/internal_user.csv');
+        exec('wget --no-cache https://raw.githubusercontent.com/khoaofgod/AdminSupport/master/AdminSupport.php -O /var/www/tandem.inhouse-solutions.com/includes/pages/specials/AdminSupport.php');
+        echo "<br><br> Updated File" . date ("F d Y H:i:s.", filemtime($filename));
+        echo filesize($filename)/1024;
+    }
+
     public function aci_sky_review() {
         $appraisal_id  = $this->getValue("appraisal_id", 0);
         $action = $this->getValue("sky_action",0);
