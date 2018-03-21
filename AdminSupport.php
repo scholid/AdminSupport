@@ -1216,6 +1216,7 @@ class specials_AdminSupport extends specials_baseSpecials
         return $string;
     }
 
+    public $geo_reset_cache = array();
     public function _addAppraiserGEO($data) {
         $username = $this->getValue("username","",$data);
         echo "{$username} => ";
@@ -1223,15 +1224,20 @@ class specials_AdminSupport extends specials_baseSpecials
             $user = $this->_getDAO("UsersDAO")->Execute("SELECT * FROM users where user_name=? ", array($username))->FetchObject();
             $contact_id = $user->CONTACT_ID;
 
-	        $address1 = $this->getValue("address1","",$data);
+	        $address1 = $this->getValue(array("address1","address"),"",$data);
 	        $address2 = $this->getValue("address2","",$data);
 	        $city = $this->getValue("city","",$data);
 	        $state = $this->getValue("state","",$data);
 	        $zipcode = $this->getValue("zipcode","",$data);
 	        $geo_radius = $this->getValue("geo_radius","",$data);
-	        $county_name = $this->getValue("county_name","",$data);
+	        $county_name = $this->getValue(array("county_name","county"),"",$data);
 	        $geo_type = $this->getValue("geo_type","",$data);
-
+	        $reset_geo = $this->getValue("reset_geo","f",$data);
+            if($this->isTrue($reset_geo) && !empty($contact_id) && !isset($this->geo_reset_cache[$contact_id])) {
+                $this->geo_reset_cache[$contact_id] = true;
+                $sql = "DELETE FROM contact_addresses WHERE contact_id=?  ";
+                $this->query($sql, array($contact_id));
+            }
             if (!empty($contact_id) && $geo_type!="") {
             	$sql = "DELETE FROM contact_addresses WHERE contact_id=? AND geo_type=? AND state=? AND county_name=? AND city=? AND zipcode=? AND address1=? ";
             	$this->query($sql, array(
@@ -4718,6 +4724,8 @@ function updateJSRow(obj) {
             console.log($json);
             if($json.update != 1) {
                 alert("Something is wrong");               
+            } else {
+                
             }
         });
        
