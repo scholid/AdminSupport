@@ -40,6 +40,7 @@ require_once('modules/remote/admin/companies/ManageBrokerCompany.php');
 require_once ('classes/AmcProductPricingRules.php');
 require_once("classes/invoices/PayerInvoiceFactory.php");
 require_once("classes/Configs/LocationConfig.php");
+require_once('classes/Wallet.php');
 
 @include('Net/SFTP.php');
 
@@ -3002,6 +3003,21 @@ class specials_AdminSupport extends specials_baseSpecials
 		}
 	}
 
+	public function menu_appraisals_wallet_get_payment_information() {
+        $this->buildForm(array(
+            $this->buildInput("appraisal_id","Appraisal ID","text")
+        ));
+
+        $appraisal_id = $this->getValue("appraisal_id");
+        if($appraisal_id != "") {
+            $wallet = new Wallet();
+            $info = $wallet->getBorrowerWallet($appraisal_id);
+            echo "<pre>";
+            print_r($info);
+            echo "</pre>";
+        }
+    }
+
 
 	public function downloadFile($file = null) {
 		if(empty($file)) {
@@ -3259,7 +3275,7 @@ class specials_AdminSupport extends specials_baseSpecials
                         "msg"   => "Updated"
                     ));
 
-                } 
+                }
 
                 if($js_action === "delete") {
                     $this->quickBackup("SELECT * FROM {$table} WHERE {$primary_key}=? ",array($primary_id));
