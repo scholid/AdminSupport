@@ -1,4 +1,5 @@
 <?php
+
 /*
 install command as webdocs user
 
@@ -3258,13 +3259,7 @@ class specials_AdminSupport extends specials_baseSpecials
                         "msg"   => "Updated"
                     ));
 
-                } else {
-                    $this->outputJSON(array(
-                        "update" => 2,
-                        "msg"   => "Updated failed",
-                        "data"  => $data,
-                    ));
-                }
+                } 
 
                 if($js_action === "delete") {
                     $this->quickBackup("SELECT * FROM {$table} WHERE {$primary_key}=? ",array($primary_id));
@@ -4477,6 +4472,25 @@ B.body,  B.message_to , B.message_from, B.last_attempted_timestamp, E.event_date
 				}
 
 			}
+
+            $sql  = "SELECT * FROM contacts where long is NULL and contact_type=4 ";
+            $rows = $this->query( $sql )->GetRows();
+            foreach($rows as $row) {
+                $contact_id = $row['contact_id'];
+                $GeoCodeService = new GeoCodeService();
+                $res = $GeoCodeService->GetGeo($row['address1']." ".$row['city']." ".$row['state']." ".$row['zipcode']);
+                if(!empty($res->LONGITUDE)) {
+                    $new_std = new stdClass();
+                    $new_std->CONTACT_ID = $contact_id;
+                    $new_std->LONG = $res->LONGITUDE;
+                    $new_std->LAT = $res->LATITUDE;
+                    $this->_getDAO("ContactsDAO")->update($new_std);
+                } else {
+                    echo " CONTACT ID {$contact_id} IS BAD GEO <br>";
+                }
+
+            }
+
 		}
 		$sql  = "SELECT * FROM contact_addresses where geo_type='radius' and latitude is NULL ";
 		$rows = $this->query( $sql )->GetRows();
