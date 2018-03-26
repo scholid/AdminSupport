@@ -1488,6 +1488,22 @@ class specials_AdminSupport extends specials_baseSpecials
     	return $fields;
     }
 
+    public function menu_tools_api_get_amc_intergated() {
+        $schemas = $this->getAllSchema();
+
+        $res = array();
+        foreach($schemas as $schema=>$connection) {
+            $sql = "select '$schema' as schema_name, P.party_name, W.* from web_services_users as W
+                  INNER JOIN parties as P ON P.party_id = W.party_id";
+            $res = array_merge($res, $this->sqlSchema($schema,$sql)->GetRows());
+        }
+        $this->buildJSTable(null,$res, array(
+            "viewOnly"  => true,
+            "excel" => true
+        ));
+
+    }
+
     public function getFieldsHeader($fields = array()) {
     	$res = array();
     	if(empty($fields)) {
