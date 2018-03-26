@@ -685,6 +685,48 @@ class specials_AdminSupport extends specials_baseSpecials
         }
     }
 
+    public function quickBuild($title, $dao,$where = "", $data=array(), $options = array()) {
+        $dao = $this->_getDAO($dao);
+        if(!empty($where)) {
+            $where = " WHERE {$where} ";
+        }
+        if(!empty($dao->pk)) {
+            $order_by = "order by {$dao->pk} DESC";
+        }
+        $sql = "SELECT * FROM {$dao->table} {$where} {$order_by} ";
+
+        if(!empty($title)) {
+            echo "<hr><h3>{$title}</h3>";
+        }
+        $datax = $this->query($sql, $data)->GetRows();
+        $this->buildJSTable($dao, $datax, $options);
+
+        return $datax;
+    }
+
+    public function menu_appraisals_order_pull_order() {
+        $appraisal_id = $this->getValue("appraisal_id");
+        $this->buildForm(array(
+            $this->buildInput("appraisal_id","Appraisal ID","text",$appraisal_id)
+        ));
+
+        if(!empty($appraisal_id)) {
+            $appraisals = $this->quickBuild("Appraisals", "AppraisalsDAO", "appraisal_id=?", array($appraisal_id));
+            $this->quickBuild("Status History","AppraisalStatusHistoryDAO", "appraisal_id=?", array($appraisal_id));
+            $this->getAppraisalProducts($appraisal_id);
+
+            $requested_by = $this->quickBuild("Requested By","UsersDAO", "user_id=?", array($appraisals[0]['requested_by']));
+            $this->quickBuild(null,"ContactsDAO", "contact_id=?", array($requested_by[0]['contact_id']));
+            $this->quickBuild("Appraisers","ContactsDAO", "contact_id=?", array($appraisals[0]['appraiser_id']));
+            $this->quickBuild(null,"UsersDAO", "contact_id=?", array($appraisals[0]['appraiser_id']));
+            $this->quickBuild("AMC","PartiesDAO", "party_id=?", array($appraisals[0]['amc_id']));
+            $this->quickBuild("Payment Processing Log","PaymentProcessingResultLogDAO", "appraisal_id=?", array($appraisal_id));
+            $this->quickBuild("Wallet","WalletPartialPaymentInformationDAO", "appraisal_id=?", array($appraisal_id));
+            $this->_getAppraisalWorkFlowHistory($appraisal_id);
+            $this->_getAppraisalEmail($appraisal_id, "");
+        }
+    }
+
     public function fixCompletedEmail() {
 	    $schemas = $this->getAllSchema();
 	    foreach($schemas as $schema=>$connection) {
@@ -3110,7 +3152,12 @@ class specials_AdminSupport extends specials_baseSpecials
         ));
 
         if($appraisal_id !== "") {
-            $sql = "SELECT  
+           $this->_getAppraisalWorkFlowHistory($appraisal_id);
+        }
+    }
+
+    protected function _getAppraisalWorkFlowHistory($appraisal_id) {
+        $sql = "SELECT  
                         WH.workflow_history_id,
                         WA.action_name,
                         WH.action_id,
@@ -3134,10 +3181,9 @@ class specials_AdminSupport extends specials_baseSpecials
                   WHERE appraisal_id=?    
                   ORDER BY WH.workflow_history_id ASC
             ";
-            $this->buildJSTable($this->_getDAO("AppraisalsDAO"), $this->query($sql,array($appraisal_id))->getRows(), array(
-                "viewOnly"  => true
-            ));
-        }
+        $this->buildJSTable($this->_getDAO("AppraisalsDAO"), $this->query($sql,array($appraisal_id))->getRows(), array(
+            "viewOnly"  => true
+        ));
     }
 
     public function get_mapping_type_id($column_name, $table_name = "") {
@@ -3695,40 +3741,43 @@ class specials_AdminSupport extends specials_baseSpecials
             $this->buildInput("appraisal_id","Appraisal ID","text"),
         ));
         if($appraisal_id >0 ) {
-            $this->h4("Products");
-            $sql = "SELECT S.appraisal_product_name, 
+            $this->getAppraisalProducts($appraisal_id);
+	        $this->buildJSTable($this->_getDAO("AppraisalProductsDAO"),$this->_getDAO("AppraisalProductsDAO")->Execute("select appraisal_product_id, appraisal_product_name from appraisal_products where enabled_flag=true")->GetRows(), array("viewOnly"=>true , "excel"=>true));
+
+        }
+    }
+
+    public function getAppraisalProducts($appraisal_id) {
+        $this->h4("Products");
+        $sql = "SELECT S.appraisal_product_name, 
                     AP.* 
                     FROM appraisals_products AS AP 
                     INNER JOIN appraisal_products as S on AP.appraisal_product_id = S.appraisal_product_id
             WHERE AP.appraisal_id=?
             ";
-            $data = $this->query($sql, array($appraisal_id))->GetRows();
-            $this->buildJSTable($this->_getDAO("AppraisalsProductsDAO"),$data);
+        $data = $this->query($sql, array($appraisal_id))->GetRows();
+        $this->buildJSTable($this->_getDAO("AppraisalsProductsDAO"),$data);
 
-            $this->h4("Services");
-            $sql = "SELECT S.service_product_name, 
+        $this->h4("Services");
+        $sql = "SELECT S.service_product_name, 
                     ASP.* 
                     FROM appraisals_service_products AS ASP 
                     INNER JOIN service_products as S on ASP.service_product_id = S.service_product_id
             WHERE ASP.appraisal_id=?
             ";
-            $data = $this->query($sql, array($appraisal_id))->GetRows();
-            $this->buildJSTable($this->_getDAO("AppraisalsServiceProductsDAO"),$data);
+        $data = $this->query($sql, array($appraisal_id))->GetRows();
+        $this->buildJSTable($this->_getDAO("AppraisalsServiceProductsDAO"),$data);
 
-            $this->h4("Invoice Products");
-            $sql = "SELECT S.appraisal_product_name, 
+        $this->h4("Invoice Products");
+        $sql = "SELECT S.appraisal_product_name, 
                     OFE.* 
                     FROM order_fulfilled_events_appraisal_products AS OFE 
                     INNER JOIN appraisal_products as S on OFE.appraisal_product_id = S.appraisal_product_id
                     INNER JOIN appraisals_products AS AP ON AP.appraisals_products_id = OFE.appraisals_products_id
                     WHERE AP.appraisal_id=?
             ";
-            $data = $this->query($sql, array($appraisal_id))->GetRows();
-            $this->buildJSTable($this->_getDAO("OrderFulfilledEventsAppraisalProductsDAO"),$data);
-
-	        $this->buildJSTable($this->_getDAO("AppraisalProductsDAO"),$this->_getDAO("AppraisalProductsDAO")->Execute("select appraisal_product_id, appraisal_product_name from appraisal_products where enabled_flag=true")->GetRows(), array("viewOnly"=>true , "excel"=>true));
-
-        }
+        $data = $this->query($sql, array($appraisal_id))->GetRows();
+        $this->buildJSTable($this->_getDAO("OrderFulfilledEventsAppraisalProductsDAO"),$data);
     }
 
     public function clear_ucdp_error_process($appraisal_id) {
@@ -3910,18 +3959,24 @@ class specials_AdminSupport extends specials_baseSpecials
         $message_to = $this->getValue("message_to","");
 
         if($appraisal_id > 0 || $message_to!="") {
-            $data_exe = array();
-            $where_string = "";
-            if($appraisal_id > 0) {
-                $where_string .= "AND A.appraisal_id=? ";
-                $data_exe[] = $appraisal_id;
-            }
-            if($message_to != "") {
-                $where_string .= "AND B.message_to=? ";
-                $data_exe[] = $message_to;
-            }
+            $this->_getAppraisalEmail($appraisal_id, $message_to);
+        }
 
-            $sql = "SELECT A.appraisal_id, B.notification_job_id, B.job_completed_flag, B.subject, 
+    }
+
+    public function _getAppraisalEmail($appraisal_id, $message_to = "") {
+        $data_exe = array();
+        $where_string = "";
+        if($appraisal_id > 0) {
+            $where_string .= "AND A.appraisal_id=? ";
+            $data_exe[] = $appraisal_id;
+        }
+        if($message_to != "") {
+            $where_string .= "AND B.message_to=? ";
+            $data_exe[] = $message_to;
+        }
+
+        $sql = "SELECT A.appraisal_id, B.notification_job_id, B.job_completed_flag, B.subject, 
 B.body,  B.message_to , B.message_from, B.last_attempted_timestamp, E.event_date, B.bounce_flag , B.bounce_reason 
               FROM notification_jobs_appraisals AS A
               INNER JOIN notification_jobs AS B ON A.notification_job_id = B.notification_job_id
@@ -3931,10 +3986,8 @@ B.body,  B.message_to , B.message_from, B.last_attempted_timestamp, E.event_date
               ORDER BY B.notification_job_id DESC 
               LIMIT 500
               ";
-            $rows = $this->_getDAO("AppraisalsDAO")->Execute($sql, $data_exe)->GetRows();
-            $this->buildJSTable($this->_getDAO("NotificationJobsDAO"), $rows);
-        }
-
+        $rows = $this->_getDAO("AppraisalsDAO")->Execute($sql, $data_exe)->GetRows();
+        $this->buildJSTable($this->_getDAO("NotificationJobsDAO"), $rows);
     }
 
     public function buildInput($id, $label, $type, $default = "") {
@@ -4202,12 +4255,13 @@ B.body,  B.message_to , B.message_from, B.last_attempted_timestamp, E.event_date
         }
 
         $data_sql_id = "sql".rand(1000,9999).rand(1000,9999);
-        $sql_table = "<textarea id={$data_sql_id} data-sql='1' style=width:100%;height:50px; ></textarea><br>
-                            <button data-sql='$data_sql_id' data-table='$table' onclick='run_custom_sql(this);'>Run SQL</button> 
-                            <button data-sql='$data_sql_id' data-table='$table' data-cols='".implode(", ",$cols)."' onclick='add_insert_into(this)'> Add INSERT INTO </button>
-                            <button data-sql='$data_sql_id' data-table='$table' data-col-1='{$cols[0]}'  data-col-2='{$cols[1]}' onclick='add_delete_from(this)'> Add DELETE FROM </button>
-                            <button data-sql='$data_sql_id' data-table='$table' data-col-1='{$cols[0]}'  data-col-2='{$cols[1]}' onclick='add_update_from(this)'> Add Update </button> 
-                            <button data-sql='$data_sql_id' data-table='$table' data-col-1='{$cols[0]}'  data-col-2='{$cols[1]}' onclick='build_insert_from(this)'> Build Insert Form </button> 
+        $sql_table = "<textarea id={$data_sql_id} class={$data_sql_id} data-sql='1' style=width:100%;height:50px;display:none; ></textarea><br>
+                            <button data-sql='$data_sql_id'  data-table='$table' onclick='$(\".{$data_sql_id}\").toggle();'>SQL Box</button> 
+                            <button data-sql='$data_sql_id' class={$data_sql_id}  data-table='$table' style=display:none; onclick='run_custom_sql(this);'>Run SQL</button> 
+                            <button data-sql='$data_sql_id' class={$data_sql_id}  data-table='$table' style=display:none; data-cols='".implode(", ",$cols)."' onclick='add_insert_into(this)'> Add INSERT INTO </button>
+                            <button data-sql='$data_sql_id' class={$data_sql_id}  data-table='$table' style=display:none; data-col-1='{$cols[0]}'  data-col-2='{$cols[1]}' onclick='add_delete_from(this)'> Add DELETE FROM </button>
+                            <button data-sql='$data_sql_id' class={$data_sql_id}  data-table='$table' style=display:none; data-col-1='{$cols[0]}'  data-col-2='{$cols[1]}' onclick='add_update_from(this)'> Add Update </button> 
+                            <button data-sql='$data_sql_id' class={$data_sql_id}  data-table='$table' style=display:none; data-col-1='{$cols[0]}'  data-col-2='{$cols[1]}' onclick='build_insert_from(this)'> Build Insert Form </button> 
                       <div id='form-{$data_sql_id}' style='display: none;margin:20px;'>
                       	<div class='my_form'>
                       	</div>
@@ -4868,6 +4922,11 @@ function cancel_sql_form(obj) {
      $(form_id).hide();
 }
 
+function pullorder() {
+    var id = $("#top_value_search").val();
+    window.location = "?action=menu_appraisals_order_pull_order&appraisal_id=" + id;
+}
+
 $(function() {
     $("#appraisal_id").change(function() {        
         $("#a_appraisal_id").attr("href","/tandem/appraisal-details/?showHeader=true&appraisal_id=" + $("#appraisal_id").val()); 
@@ -4955,6 +5014,7 @@ $(function() {
         <div class="form-group">
           <input type="text" class="form-control" id="top_value_search" placeholder="Appraisal ID">
         </div>
+        <button type="button"  class="btn btn-default" onclick="pullorder();">Pull Order</button>
         <button type="submit"  class="btn btn-default">Open</button>
       </form>
       <ul class="nav navbar-nav navbar-right">
