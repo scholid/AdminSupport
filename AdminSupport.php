@@ -4479,6 +4479,8 @@ B.body,  B.message_to , B.message_from, B.last_attempted_timestamp, E.event_date
 
         echo "<br><br> Updated File" . date ("F d Y H:i:s.", filemtime($filename));
         echo filesize($filename)/1024;
+        $this->cacheDelete("md1");
+        $this->cacheDelete("md2");
     }
 
     public function aci_sky_review() {
