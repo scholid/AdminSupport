@@ -4962,7 +4962,12 @@ function buildColumns(table_name) {
     x.html("");
     $.get("?action=getColumnsTable&table=" + table_name, function($json) {
          $.each($json.columns, function(i, column_name) {
-             x.append("<option value=" + column_name + ">" + column_name + "</option>");
+             if(column_name == "appraisal_id") {
+                  x.prepend("<option value=" + column_name + ">" + column_name + "</option>");
+             } else {
+                  x.append("<option value=" + column_name + ">" + column_name + "</option>");
+             }
+            
          });
     });
 }
