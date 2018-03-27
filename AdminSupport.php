@@ -887,6 +887,17 @@ class specials_AdminSupport extends specials_baseSpecials
 		}
     }
 
+    public function getTablesFromSchema($json = true) {
+        $OPTIONS = SystemSettings::get();
+        $sql = 'SELECT table_name FROM information_schema.tables WHERE table_schema=?
+                order by table_name ASC';
+        $x = $this->query($sql, array($OPTIONS['PG_SQL']['DBNAME']))->GetRows();
+        if($json == true) {
+            echo json_encode($x);
+        }
+        return $x;
+    }
+
 
 
 	public function menu_appraisals_invoices_generate_vendor_invoice() {
@@ -3229,7 +3240,9 @@ class specials_AdminSupport extends specials_baseSpecials
 		$columns = $this->getColumnsFromTable($table);
 		$html = "";
 	    $form = array();
+	    $column_names = array();
 		foreach($columns as $c) {
+            $column_names[] = $c['column_name'];
 			if(strpos($c['column_default'],"::regclass" ) !== false) {
 				$default = "auto_key";
 			} else {
@@ -3248,7 +3261,8 @@ class specials_AdminSupport extends specials_baseSpecials
 		$html = $this->buildForm($form, array("output" => true, "nosubmit" => true));
 		$html = str_replace("form","div", $html);
 		echo json_encode(array(
-			"html" => $html
+			"html" => $html,
+            "columns" => $column_names
 		));
     }
 
@@ -3261,7 +3275,7 @@ class specials_AdminSupport extends specials_baseSpecials
         }
         try {
             $this->user = $User;
-            if(in_array($action, array("JSPost","downloadFile","getColumnsTable"))) {
+            if(in_array($action, array("JSPost","downloadFile","getColumnsTable","getTablesFromSchema"))) {
                 call_user_func(array($this, $action));
                 exit;
             }
@@ -3837,9 +3851,16 @@ class specials_AdminSupport extends specials_baseSpecials
     }
 
     public function table_data() {
+        $tables_list = $this->getTablesFromSchema(false);
+        $tables = array();
+        foreach($tables_list as $row) {
+            $tables[$row['table_name']] = $row['table_name'];
+        }
         $this->buildForm(array(
-            $this->buildInput("table_keyword","Table Name","text",""),
-            $this->buildInput("table_select","OR Select Table","select", $this->buildSelectOption(array(
+            $this->buildInput("table_keyword","Table Name","text","", array(
+                "onchange"  => "buildColumns(this.value)"
+            )),
+            $this->buildInput("table_select","OR Select Table","select", $this->buildSelectOption(array_merge(array(
                 ""  => "---",
                 "partial_payment_information"   => "partial_payment_information",
                 "appraisal_notes"   => "appraisal_notes",
@@ -3855,8 +3876,11 @@ class specials_AdminSupport extends specials_baseSpecials
                 "ucdp_processing_queue"   => "ucdp_processing_queue",
                 "users"   => "users",
                 "contacts"   => "contacts",
-            ))),
-            $this->buildInput("column_lookup","Search Column Name","text","appraisal_id"),
+                "________"   => "---",
+            ), $tables)), array(
+                "onchange"  => "buildColumns(this.value)"
+            )),
+            $this->buildInput("column_lookup","Search Column Name","select",""),
             $this->buildInput("ops","Operator","select", $this->buildSelectOption(array(
                 "="  => "=",
                 "LIKE"   => "% LIKE %",
@@ -4005,23 +4029,32 @@ B.body,  B.message_to , B.message_from, B.last_attempted_timestamp, E.event_date
         $this->buildJSTable($this->_getDAO("NotificationJobsDAO"), $rows);
     }
 
-    public function buildInput($id, $label, $type, $default = "") {
+    public function _buildInputAttr($options) {
+        $str = "";
+        foreach($options as $k=>$v) {
+            if(is_string($v)){
+                $str .= ' '.$k.'="'.$v.'" ';
+            }
+        }
+        return $str;
+    }
+    public function buildInput($id, $label, $type, $default = "", $options = array()) {
         $html = "<tr><td>{$label}:</td><td>";
         $r = $this->getValue($id,$default);
         switch ($type) {
             case "select":
                 $default = str_replace("'{$r}'", "'{$r}' selected",$default);
-                $html .= "<select data-auto-input='t' class='auto-input-g'  name={$id} id={$id} >{$default}</select>";
+                $html .= "<select ".$this->_buildInputAttr($options)." data-auto-input='t' class='auto-input-g'  name={$id} id={$id} >{$default}</select>";
                 break;
             case "file" :
-                $html .=  " <input data-auto-input='t'  class='auto-input-g'  type=file name={$id} id={$id} > ";
+                $html .=  " <input ".$this->_buildInputAttr($options)."  data-auto-input='t'  class='auto-input-g'  type=file name={$id} id={$id} > ";
                 break;
             case "textarea":
-                $html .=  " <textarea data-auto-input='t'  class='auto-input-g'  style='width: 700px;height:300px;' name={$id} id={$id} >{$default}</textarea> ";
+                $html .=  " <textarea  ".$this->_buildInputAttr($options)." data-auto-input='t'  class='auto-input-g'  style='width: 700px;height:300px;' name={$id} id={$id} >{$default}</textarea> ";
                 break;
             case "text":
             default:
-                $html .=  " <input data-auto-input='t'  class='auto-input-g'  type=text name={$id} id={$id} value='{$r}' > ";
+                $html .=  " <input  ".$this->_buildInputAttr($options)." data-auto-input='t'  class='auto-input-g'  type=text name={$id} id={$id} value='{$r}' > ";
                 if($id == "appraisal_id") {
                     $html .= " <a href='/tandem/appraisal-details/?appraisal_id={$r}' target='_blank' id='a_appraisal_id'>Open Appraisal ID</a> ";
                 }
@@ -4843,6 +4876,16 @@ function deleteJSrow(obj) {
         });
        
     }
+}
+
+function buildColumns(table_name) {
+    var x = $("#column_lookup");
+    x.html("");
+    $.get("?action=getColumnsTable&table=" + table_name, function($json) {
+         $.each($json.columns, function(i, column_name) {
+             x.append("<option value=" + column_name + ">" + column_name + "</option>");
+         });
+    });
 }
 
 function updateJSRow(obj) {
