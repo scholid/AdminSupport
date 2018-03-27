@@ -649,10 +649,13 @@ class specials_AdminSupport extends specials_baseSpecials
     }
 
     public function needUpdateSystem() {
-        $md1 = md5(file_get_contents("https://raw.githubusercontent.com/khoaofgod/AdminSupport/master/AdminSupport.php"));
-        $md2 = md5(file_get_contents(__DIR__."/AdminSupport.php"));
-        if($md1!==$md2) {
+        $options = SystemSettings::get();
+        $prod = $options['General']['Environment'] == 'prod';
+        $md1 = md5(trim(file_get_contents("https://raw.githubusercontent.com/khoaofgod/AdminSupport/master/AdminSupport.php?".rand(1,9999))));
+        $md2 = md5(trim(file_get_contents(__DIR__."/AdminSupport.php")));
+        if($md1!==$md2 && $prod) {
             echo " <br><br><h4> Need Update Support Tools - <A href='?action=menu_tools_delpoyment_update_support_tools'>Click Here</A></h4> <br><br>";
+            echo "{$md1} VS {$md2}";
         }
     }
 
