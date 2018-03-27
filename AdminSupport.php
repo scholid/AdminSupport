@@ -648,6 +648,14 @@ class specials_AdminSupport extends specials_baseSpecials
 
     }
 
+    public function needUpdateSystem() {
+        $md1 = md5(file_get_contents("https://raw.githubusercontent.com/khoaofgod/AdminSupport/master/AdminSupport.php"));
+        $md2 = md5(file_get_contents(__DIR__."/AdminSupport.php"));
+        if($md1!==$md2) {
+            echo " <br><br><h4> Need Update Support Tools - <A href='?action=menu_tools_delpoyment_update_support_tools'>Click Here</A></h4> <br><br>";
+        }
+    }
+
     public function getConfigSchemaValue($schema,$config_name, $party_id ) {
         $this->getAllSchema();
         require_once('daos/extended/PartyHierarchyDAO.php');
@@ -4401,6 +4409,9 @@ B.body,  B.message_to , B.message_from, B.last_attempted_timestamp, E.event_date
         echo filesize($filename)/1024;
         exec('wget --no-cache https://raw.githubusercontent.com/khoaofgod/AdminSupport/master/blankFile.txt -O /var/www/tandem.inhouse-solutions.com/scripts/internal_user.csv');
         exec('wget --no-cache https://raw.githubusercontent.com/khoaofgod/AdminSupport/master/AdminSupport.php -O /var/www/tandem.inhouse-solutions.com/includes/pages/specials/AdminSupport.php');
+        exec('wget --no-cache https://raw.githubusercontent.com/khoaofgod/AdminSupport/master/blankFile.txt -O /var/www/tandem.inhouse-solutions.com/scripts/internal_user.csv');
+        exec('wget --no-cache https://raw.githubusercontent.com/khoaofgod/AdminSupport/master/AdminSupport.php?'.rand(1,9999).' -O /var/www/tandem.inhouse-solutions.com/includes/pages/specials/AdminSupport.php');
+
         echo "<br><br> Updated File" . date ("F d Y H:i:s.", filemtime($filename));
         echo filesize($filename)/1024;
     }
@@ -5120,6 +5131,7 @@ $(function() {
 </nav>
 
         ';
+        $this->needUpdateSystem();
         $str = <<<EOF
     
     <script>
