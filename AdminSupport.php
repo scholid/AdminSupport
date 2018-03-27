@@ -704,6 +704,21 @@ class specials_AdminSupport extends specials_baseSpecials
         return $datax;
     }
 
+    public function _getAppraisalStatus($appraisal_id) {
+        return $this->quickBuild("Status History","AppraisalStatusHistoryDAO", "appraisal_id=?", array($appraisal_id),
+            array(
+                "hookData" => array(
+                    "updated_flag"  => array(
+                        "f" => "f = current"
+                    ),
+                    "status_type_id" => array(
+                        "table"  =>  "status_types",
+                        "column"    => "status_type_id",
+                        "display"   => "status_name"
+                    )
+                )
+            ));
+    }
     public function menu_appraisals_order_pull_order() {
         $appraisal_id = $this->getValue("appraisal_id");
         $this->buildForm(array(
@@ -712,7 +727,7 @@ class specials_AdminSupport extends specials_baseSpecials
 
         if(!empty($appraisal_id)) {
             $appraisals = $this->quickBuild("Appraisals", "AppraisalsDAO", "appraisal_id=?", array($appraisal_id));
-            $this->quickBuild("Status History","AppraisalStatusHistoryDAO", "appraisal_id=?", array($appraisal_id));
+            $this->_getAppraisalStatus($appraisal_id);
             $this->getAppraisalProducts($appraisal_id);
 
             $requested_by = $this->quickBuild("Requested By","UsersDAO", "user_id=?", array($appraisals[0]['requested_by']));
@@ -4220,7 +4235,7 @@ B.body,  B.message_to , B.message_from, B.last_attempted_timestamp, E.event_date
 	                }
                 }
 	            $excel_row[] = $value;
-                $tbody .= "<td data-primary-value='{$row_id}' data-table='{$table}' data-primary-key='{$primary_key}' data-name='{$col}' style='{$width}'>                                
+                $tbody .= "<td vaign='top' data-primary-value='{$row_id}' data-table='{$table}' data-primary-key='{$primary_key}' data-name='{$col}' style='{$width}'>                                
                               ";
                 if($col == "appraisal_id") {
                     $link = "<a href='/tandem/appraisal-details/?appraisal_id={$value}' target='_blank' style='font-size: 11px;' >Open</a> ";
@@ -4234,6 +4249,33 @@ B.body,  B.message_to , B.message_from, B.last_attempted_timestamp, E.event_date
                         $tbody .= " <a href='/tandem/appraisal-details/?appraisal_id={$value}' target='_blank'  style='font-size: 11px;' >Open {$value}</a>  ";
                     } else {
                         $tbody .= " {$value}  ";
+                    }
+
+                }
+                if(isset($options['hookData']) && isset($options['hookData'][$col])) {
+                    if(isset($options['hookData'][$col]['table']) && isset($options['hookData'][$col]['display'])) {
+                        $_column = !isset($options['hookData'][$col]['column']) ? $options['hookData'][$col] : $options['hookData'][$col]['column'];
+                        if(!is_array($options['hookData'][$col]['display'])) {
+                            $options['hookData'][$col]['display'] = array($options['hookData'][$col]['display']);
+                        }
+                        $_x_select = implode(", ",$options['hookData'][$col]['display']);
+                        $sub_set = "SELECT {$_x_select} FROM {$options['hookData'][$col]['table']} WHERE {$_column}=? limit 1";
+                        $_tmp_data = $this->query($sub_set, array($value))->getRows();
+
+                        if(count($_tmp_data) > 0) {
+                            $tbody .= "<div style=display:inline;font-size:11px;>";
+                            $tu = array();
+                            foreach($_tmp_data[0] as $_column=>$_v) {
+                                $tu[] = $_v;
+
+                            }
+                            $tbody .= implode(", ", $tu);
+                            $tbody .= "</div>";
+                        }
+
+                    }
+                    else if(isset($options['hookData'][$col][$value])) {
+                        $tbody .= "<div style=display:inline;font-size:11px;>{$options['hookData'][$col][$value]}</div>";
                     }
 
                 }
