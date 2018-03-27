@@ -935,14 +935,12 @@ class specials_AdminSupport extends specials_baseSpecials
     }
 
     public function cacheWrite() {
-        $f = fopen("/tmp/support.cache.json","w+");
-        fwrite($f, json_encode($this->cache));
-        fclose($f);
+        $_SESSION['caching_support'] = $this->cache;
     }
 
     public function cacheRead() {
-        if(empty($this->cache) && file_exists("/tmp/support.cache.json")) {
-            $this->cache = json_decode(file_get_contents("/tmp/support.cache.json"),true);
+        if(empty($this->cache) && isset($_SESSION['caching_support'])) {
+            $this->cache = $_SESSION['caching_support'];
         }
     }
 
@@ -3307,6 +3305,7 @@ class specials_AdminSupport extends specials_baseSpecials
     	$table = $this->getValue("table","");
     	$cache_key = "getColumnsTable".$table;
         $html = $this->cacheGet($cache_key);
+
         if(empty($html)) {
             $columns = $this->getColumnsFromTable($table);
             $html = "";
