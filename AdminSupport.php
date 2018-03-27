@@ -4962,7 +4962,7 @@ function buildColumns(table_name) {
     $.get("?action=getColumnsTable&table=" + table_name, function($json) {
          $.each($json.columns, function(i, column_name) {
              if(column_name == "appraisal_id") {
-                  x.prepend("<option value=" + column_name + ">" + column_name + "</option>");
+                  x.prepend("<option value=" + column_name + " selected >" + column_name + "</option>");
              } else {
                   x.append("<option value=" + column_name + ">" + column_name + "</option>");
              }
