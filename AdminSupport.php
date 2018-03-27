@@ -3304,29 +3304,35 @@ class specials_AdminSupport extends specials_baseSpecials
 
     public function getColumnsTable() {
     	$table = $this->getValue("table","");
-		$columns = $this->getColumnsFromTable($table);
-		$html = "";
-	    $form = array();
-	    $column_names = array();
-		foreach($columns as $c) {
-            $column_names[] = $c['column_name'];
-			if(strpos($c['column_default'],"::regclass" ) !== false) {
-				$default = "auto_key";
-			} else {
-				$default = $c['column_default'];
-			}
+    	$cache_key = "getColumnsTable".$table;
+        $html = $this->cacheGet($cache_key);
+        if(empty($html)) {
+            $columns = $this->getColumnsFromTable($table);
+            $html = "";
+            $form = array();
+            $column_names = array();
+            foreach($columns as $c) {
+                $column_names[] = $c['column_name'];
+                if(strpos($c['column_default'],"::regclass" ) !== false) {
+                    $default = "auto_key";
+                } else {
+                    $default = $c['column_default'];
+                }
 
-			$select_data = $this->get_mapping_type_id($c['column_name'], $table);
-			if($select_data!="") {
-				$type = "select";
-				$default = $select_data;
-			} else {
-				$type = "text";
-			}
-			$form[] = $this->buildInput($c['column_name'], $c['column_name'] ." ({$c['data_type']}) ", $type ,$default);
-		}
-		$html = $this->buildForm($form, array("output" => true, "nosubmit" => true));
-		$html = str_replace("form","div", $html);
+                $select_data = $this->get_mapping_type_id($c['column_name'], $table);
+                if($select_data!="") {
+                    $type = "select";
+                    $default = $select_data;
+                } else {
+                    $type = "text";
+                }
+                $form[] = $this->buildInput($c['column_name'], $c['column_name'] ." ({$c['data_type']}) ", $type ,$default);
+            }
+            $html = $this->buildForm($form, array("output" => true, "nosubmit" => true));
+            $html = str_replace("form","div", $html);
+            $this->cacheSet($cache_key, $html, 3600*24*3);
+        }
+
 		echo json_encode(array(
 			"html" => $html,
             "columns" => $column_names
