@@ -651,8 +651,17 @@ class specials_AdminSupport extends specials_baseSpecials
     public function needUpdateSystem() {
         $options = SystemSettings::get();
         $prod = $options['General']['Environment'] == 'prod';
-        $md1 = md5(trim(file_get_contents("https://raw.githubusercontent.com/khoaofgod/AdminSupport/master/AdminSupport.php?".rand(1,9999))));
-        $md2 = md5(trim(file_get_contents(__DIR__."/AdminSupport.php")));
+        $md1 = $this->cacheGet("md1");
+        if(empty($md1)) {
+            $md1 = md5(trim(file_get_contents("https://raw.githubusercontent.com/khoaofgod/AdminSupport/master/AdminSupport.php?".rand(1,9999))));
+            $this->cacheSet("md1",$md1);
+        }
+        $md2 = $this->cacheGet("md2");
+        if(empty($md2)) {
+            $md2 = md5(trim(file_get_contents(__DIR__."/AdminSupport.php")));
+            $this->cacheSet("md2",$md2);
+        }
+
         if($md1!==$md2 && $prod) {
             echo " <br><br><h4> Need Update Support Tools - <A href='?action=menu_tools_delpoyment_update_support_tools'>Click Here</A></h4> <br><br>";
             echo "{$md1} VS {$md2}";
@@ -898,12 +907,58 @@ class specials_AdminSupport extends specials_baseSpecials
 		}
     }
 
+    var $cache = array();
+    public function cacheSet($key, $value, $time = 3600) {
+        $this->cache[$key] = array(
+            "value" => $value,
+            "time"  => @date("U") + $time
+        );
+        $this->cacheWrite();
+    }
+
+    public function cacheGet($key) {
+        $cache = isset($this->cache[$key]) ? $this->cache[$key] : null;
+        if(empty($cache)) {
+            return null;
+        }
+        if($cache['time'] <= @date("U")) {
+            $this->cacheDelete($key);
+            return null;
+        }
+        return $cache['value'];
+    }
+
+    public function cacheDelete($key) {
+        unset($this->cache[$key]);
+        $this->cacheWrite();
+    }
+
+    public function cacheWrite() {
+        $f = fopen("/tmp/support.cache.json","w+");
+        fwrite($f, json_encode($this->cache));
+        fclose($f);
+    }
+
+    public function cacheRead() {
+        if(empty($this->cache) && file_exists("/tmp/support.cache.json")) {
+            $this->cache = json_decode(file_get_contents("/tmp/support.cache.json"),true);
+        }
+    }
+
+
+
     public function getTablesFromSchema($json = true) {
         $OPTIONS = SystemSettings::get();
-        $sql = 'SELECT table_name FROM information_schema.tables WHERE table_schema=? OR table_schema=? 
+        $key = "table_".$OPTIONS['PG_SQL']['USER'];
+        $x = $this->cacheGet($key);
+        if(empty($x)) {
+            $sql = 'SELECT table_name FROM information_schema.tables WHERE table_schema=? OR table_schema=? 
                 GROUP BY table_name
                 order by table_name ASC';
-        $x = $this->query($sql, array($OPTIONS['PG_SQL']['DBNAME'], $OPTIONS['PG_SQL']['USER']))->GetRows();
+            $x = $this->query($sql, array($OPTIONS['PG_SQL']['DBNAME'], $OPTIONS['PG_SQL']['USER']))->GetRows();
+            $this->cacheSet($key,$x);
+        }
+
         if($json == true) {
             echo json_encode($x);
         }
