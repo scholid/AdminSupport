@@ -917,6 +917,7 @@ class specials_AdminSupport extends specials_baseSpecials
     }
 
     public function cacheGet($key) {
+        $this->cacheRead();
         $cache = isset($this->cache[$key]) ? $this->cache[$key] : null;
         if(empty($cache)) {
             return null;
