@@ -900,9 +900,10 @@ class specials_AdminSupport extends specials_baseSpecials
 
     public function getTablesFromSchema($json = true) {
         $OPTIONS = SystemSettings::get();
-        $sql = 'SELECT table_name FROM information_schema.tables WHERE table_schema=?
+        $sql = 'SELECT table_name FROM information_schema.tables WHERE table_schema=? OR table_schema=? 
+                GROUP BY table_name
                 order by table_name ASC';
-        $x = $this->query($sql, array($OPTIONS['PG_SQL']['DBNAME']))->GetRows();
+        $x = $this->query($sql, array($OPTIONS['PG_SQL']['DBNAME'], $OPTIONS['PG_SQL']['USER']))->GetRows();
         if($json == true) {
             echo json_encode($x);
         }
