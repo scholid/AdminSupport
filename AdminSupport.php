@@ -735,6 +735,11 @@ class specials_AdminSupport extends specials_baseSpecials
                         "table"  =>  "status_types",
                         "column"    => "status_type_id",
                         "display"   => "status_name"
+                    ),
+                    "updater_id"    =>  array(
+                        "table" => "users",
+                        "column"    => "user_id",
+                        "display"   => "user_name"
                     )
                 )
             ));
@@ -762,76 +767,90 @@ class specials_AdminSupport extends specials_baseSpecials
         }
     }
 
-    public function fixCompletedEmail() {
-	    $schemas = $this->getAllSchema();
-	    foreach($schemas as $schema=>$connection) {
-		    echo $schema."<br>";
-		    if($schema == "schoolsfirstfcu" || $schema=="inhousesolutions1") {
-		    	continue;
-		    }
-		    $sql = "SELECT * 
+    public function menu_tools_utils_fix_completed_email_missing() {
+        $date_time = $this->getValue("date_time",@date("Y-m-d H:i:s","yesterday"));
+        $this->buildForm(array(
+            $this->buildInput("date_time","From Date Time","text",$date_time),
+            $this->buildInput("actionx","Action","select", $this->buildSelectOption(array(
+                "--"    => "----",
+                "send"  => "Send Complete Again"
+            ))),
+        ), array(
+            "confirm"   => true
+        ));
+        $actionx = $this->getValue("actionx");
+        if($actionx == "send") {
+            $schemas = $this->getAllSchema();
+            foreach($schemas as $schema=>$connection) {
+                echo $schema."<br>";
+                if($schema == "schoolsfirstfcu" || $schema=="inhousesolutions1") {
+                    continue;
+                }
+                $sql = "SELECT * 
 			FROM appraisal_status_history AS ASH
 			LEFT JOIN appraisal_status_updated_jobs AS Job ON (JOB.appraisal_status_history_id = ASH.appraisal_status_history_id )
 			where ASH.updated_flag IS FALSE 
 			AND ASH.status_type_id=9
 			AND ASH.status_date > '2018-03-19 15:00:00' 
 			ORDER BY Job.appraisal_id DESC ";
-		    $jobs = $this->sqlSchema($schema,$sql)->GetRows();
-		    foreach($jobs as $job) {
-			    $appraisal_id = $job['appraisal_id'];
-			    echo $appraisal_id." => ";
-			    $appraisal = $this->sqlSchema($schema, "SELECT * FROM appraisals where appraisal_id= ?", array($appraisal_id))->fetchObject();
-			    $party_id = $appraisal->PARTY_ID;
-			    if($this->getConfigSchemaValue($schema,"SEND_BORROWER_APPRAISAL_REPORT", $party_id) !== "t") {
-                    echo " Site Disabled Send Borrower Report <br>";
-                    continue;
-                }
-			    $borrower_email = $appraisal->BORROWER1_EMAIL;
-			    if($borrower_email!="") {
-			    	echo " FOUND {$borrower_email} ";
-				    // locate borrower email
-				    $sql = "SELECT * 
+                $jobs = $this->sqlSchema($schema,$sql)->GetRows();
+                foreach($jobs as $job) {
+                    $appraisal_id = $job['appraisal_id'];
+                    echo $appraisal_id." => ";
+                    $appraisal = $this->sqlSchema($schema, "SELECT * FROM appraisals where appraisal_id= ?", array($appraisal_id))->fetchObject();
+                    $party_id = $appraisal->PARTY_ID;
+                    if($this->getConfigSchemaValue($schema,"SEND_BORROWER_APPRAISAL_REPORT", $party_id) !== "t") {
+                        echo " Site Disabled Send Borrower Report <br>";
+                        continue;
+                    }
+                    $borrower_email = $appraisal->BORROWER1_EMAIL;
+                    if($borrower_email!="") {
+                        echo " FOUND {$borrower_email} ";
+                        // locate borrower email
+                        $sql = "SELECT * 
 					FROM notification_jobs_appraisals JA 
 					INNER JOIN notification_jobs AS NJ ON JA.notification_job_id=NJ.notification_job_id 
 					WHERE JA.appraisal_id= ? AND NJ.message_to=? AND NJ.body like '%Completed%' and NJ.subject like 'Status Updated%' 
 					AND (NJ.last_attempted_timestamp >= ? OR NJ.target_date >= ?)
 					
 					LIMIT 1";
-				    $email = $this->sqlSchema($schema, $sql, array($appraisal_id, $borrower_email, $job['last_attempted_timestamp'], $job['last_attempted_timestamp']))->fetchObject();
-				    $should_send = false;
+                        $email = $this->sqlSchema($schema, $sql, array($appraisal_id, $borrower_email, $job['last_attempted_timestamp'], $job['last_attempted_timestamp']))->fetchObject();
+                        $should_send = false;
 
-				    if($email->NOTIFICATION_JOB_ID) {
-				    	echo " SENT ALREADY {$email->LAST_ATTEMPTED_TIMESTAMP} / {$email->TARGET_DATE} ";
-						// locate conditions
-				    } else {
-					    echo " NOT SEND ";
-					    $should_send = true;
-				    }
+                        if($email->NOTIFICATION_JOB_ID) {
+                            echo " SENT ALREADY {$email->LAST_ATTEMPTED_TIMESTAMP} / {$email->TARGET_DATE} ";
+                            // locate conditions
+                        } else {
+                            echo " NOT SEND ";
+                            $should_send = true;
+                        }
 
-				    if($should_send == true) {
-					    echo " NOT SENT YET -> Updated Null for Job {$job['appraisal_status_updated_job_id']} ";
-					    $sql = "SELECT * FROM appraisal_status_updated_jobs WHERE appraisal_id=? AND appraisal_status_updated_job_id=? ";
-					    $current = $this->sqlSchema($schema, $sql, array($appraisal_id,$job['appraisal_status_updated_job_id']))->fetchObject();
-					    echo $current->JOB_COMPLETED_FLAG;
-					    if(is_null($current->JOB_COMPLETED_FLAG) && $current->JOB_COMPLETED_FLAG!=true) {
-						    echo "<i> Already NULLED </i> ";
-					    } else {
-						    // doing update
-						    $sql = "UPDATE appraisal_status_updated_jobs set job_completed_flag=null WHERE appraisal_id=? AND appraisal_status_updated_job_id=? ";
-						    $this->sqlSchema($schema, $sql, array($appraisal_id,$job['appraisal_status_updated_job_id']));
-						    echo "<b> DONE </b>";
-					    }
-				    }
+                        if($should_send == true) {
+                            echo " NOT SENT YET -> Updated Null for Job {$job['appraisal_status_updated_job_id']} ";
+                            $sql = "SELECT * FROM appraisal_status_updated_jobs WHERE appraisal_id=? AND appraisal_status_updated_job_id=? ";
+                            $current = $this->sqlSchema($schema, $sql, array($appraisal_id,$job['appraisal_status_updated_job_id']))->fetchObject();
+                            echo $current->JOB_COMPLETED_FLAG;
+                            if(is_null($current->JOB_COMPLETED_FLAG) && $current->JOB_COMPLETED_FLAG!=true) {
+                                echo "<i> Already NULLED </i> ";
+                            } else {
+                                // doing update
+                                $sql = "UPDATE appraisal_status_updated_jobs set job_completed_flag=null WHERE appraisal_id=? AND appraisal_status_updated_job_id=? ";
+                                $this->sqlSchema($schema, $sql, array($appraisal_id,$job['appraisal_status_updated_job_id']));
+                                echo "<b> DONE </b>";
+                            }
+                        }
 
-			    } else {
-			    	echo " NO BORROWER EMAIL ";
-			    }
-			    echo "<br>";
-		    }
+                    } else {
+                        echo " NO BORROWER EMAIL ";
+                    }
+                    echo "<br>";
+                }
 
 
 
-	    }
+            }
+        }
+
     }
 
     public function deploy() {
