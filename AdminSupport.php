@@ -4150,7 +4150,11 @@ B.body,  B.message_to , B.message_from, B.last_attempted_timestamp, E.event_date
         switch ($type) {
             case "select":
                 $default = str_replace("'{$r}'", "'{$r}' selected",$default);
+                if(empty(trim($default))) {
+                    $default = "<option value=$r >$r</option>";
+                }
                 $html .= "<select ".$this->_buildInputAttr($options)." data-auto-input='t' class='auto-input-g'  name={$id} id={$id} >{$default}</select>";
+
                 break;
             case "file" :
                 $html .=  " <input ".$this->_buildInputAttr($options)."  data-auto-input='t'  class='auto-input-g'  type=file name={$id} id={$id} > ";
