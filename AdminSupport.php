@@ -4669,9 +4669,11 @@ B.body,  B.message_to , B.message_from, B.last_attempted_timestamp, E.event_date
         $info = SystemSettings::get();
         $sql = "SELECT *
                         FROM information_schema.columns
-                        WHERE table_schema = ?
-                        and table_name = ?";
-        $columns = $this->_getDAO("AppraisalsDAO")->Execute($sql, array($info['PG_SQL']['USER'], $table))->GetRows();
+                        WHERE (table_schema = ?
+                        and table_name = ?) 
+                        or (table_schema = 'commondata'
+                        and table_name = ?) ";
+        $columns = $this->_getDAO("AppraisalsDAO")->Execute($sql, array($info['PG_SQL']['USER'], $table, $table))->GetRows();
         return $columns;
     }
 
