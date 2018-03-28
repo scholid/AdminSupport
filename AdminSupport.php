@@ -3540,7 +3540,11 @@ class specials_AdminSupport extends specials_baseSpecials
         $path = "/var/www/tandem.inhouse-solutions.com/scripts";
         $file_input = $path."/internal_user.csv";
         $script = $path."/addUsersToSite.php";
-
+        $schemas = $this->getAllSchema();
+        $site_list = array("all" => "all");
+        foreach($schemas as $schema=>$connection) {
+            $site_list[$schema]=$schema;
+        }
         $this->buildForm(array(
             $this->buildInput("username","Username (username)","text"),
             $this->buildInput("email","Email (email)","text"),
@@ -3549,7 +3553,7 @@ class specials_AdminSupport extends specials_baseSpecials
             $this->buildInput("user_type","User Type (user_type , 1= lender, 6 =cx)","text", 1),
             $this->buildInput("roles","Roles (roles , look up table below )","text", "1, 2"),
             $this->buildInput("parties","Parties ( parties = 1, or blank for vendor) ","text", "1"),
-            $this->buildInput("site","Sites (sites = all , or schema name )","text", "all"),
+            $this->buildInput("site","Sites (sites = all , or schema name )","select", $this->buildSelectOption($site_list)),
             $this->buildInput("reset_roles","Reset Roles (reset_roles, t or f)","select", $this->buildSelectOption(array("f"=>"No","t"=>"Yes"))),
             $this->buildInput("reset_contact","Reset Contact ( reset_contact, t or f)","select", $this->buildSelectOption(array("f"=>"No","t"=>"Yes"))),
             $this->buildInput("deactivate","Deactivate ( deactivate, t or f )","select", $this->buildSelectOption(array("f"=>"No","t"=>"Yes"))),
