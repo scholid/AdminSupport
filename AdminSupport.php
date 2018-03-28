@@ -768,18 +768,22 @@ class specials_AdminSupport extends specials_baseSpecials
     }
 
     public function menu_tools_utils_fix_completed_email_missing() {
-        $date_time = $this->getValue("date_time",@date("Y-m-d H:i:s","yesterday"));
+
         $this->buildForm(array(
-            $this->buildInput("date_time","From Date Time","text",$date_time),
+            $this->buildInput("date_time","From Date Time","text"),
             $this->buildInput("actionx","Action","select", $this->buildSelectOption(array(
                 "--"    => "----",
-                "send"  => "Send Complete Again"
+                "send"  => "Send Complete Again",
+                "view"  => "View Only"
             ))),
         ), array(
             "confirm"   => true
         ));
         $actionx = $this->getValue("actionx");
-        if($actionx == "send") {
+        $date_time = $this->getValue("date_time",@date("Y-m-d H:i:s","yesterday"));
+
+        if(in_array($actionx , array("send","view")) && !empty($date_time)) {
+            echo "Check From Time {$date_time}";
             $schemas = $this->getAllSchema();
             foreach($schemas as $schema=>$connection) {
                 echo $schema."<br>";
@@ -791,9 +795,9 @@ class specials_AdminSupport extends specials_baseSpecials
 			LEFT JOIN appraisal_status_updated_jobs AS Job ON (JOB.appraisal_status_history_id = ASH.appraisal_status_history_id )
 			where ASH.updated_flag IS FALSE 
 			AND ASH.status_type_id=9
-			AND ASH.status_date > '2018-03-19 15:00:00' 
+			AND ASH.status_date >= ? 
 			ORDER BY Job.appraisal_id DESC ";
-                $jobs = $this->sqlSchema($schema,$sql)->GetRows();
+                $jobs = $this->sqlSchema($schema,$sql, array($date_time))->GetRows();
                 foreach($jobs as $job) {
                     $appraisal_id = $job['appraisal_id'];
                     echo $appraisal_id." => ";
@@ -825,7 +829,7 @@ class specials_AdminSupport extends specials_baseSpecials
                             $should_send = true;
                         }
 
-                        if($should_send == true) {
+                        if($should_send == true && $actionx == "send") {
                             echo " NOT SENT YET -> Updated Null for Job {$job['appraisal_status_updated_job_id']} ";
                             $sql = "SELECT * FROM appraisal_status_updated_jobs WHERE appraisal_id=? AND appraisal_status_updated_job_id=? ";
                             $current = $this->sqlSchema($schema, $sql, array($appraisal_id,$job['appraisal_status_updated_job_id']))->fetchObject();
@@ -838,6 +842,8 @@ class specials_AdminSupport extends specials_baseSpecials
                                 $this->sqlSchema($schema, $sql, array($appraisal_id,$job['appraisal_status_updated_job_id']));
                                 echo "<b> DONE </b>";
                             }
+                        } elseif ($should_send == true) {
+                            echo " NOT SENT YET Job {$job['appraisal_status_updated_job_id']} ";
                         }
 
                     } else {
