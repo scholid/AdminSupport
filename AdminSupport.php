@@ -753,6 +753,14 @@ class specials_AdminSupport extends specials_baseSpecials
         if(!empty($appraisal_id)) {
             $appraisals = $this->quickBuild("Appraisals", "AppraisalsDAO", "appraisal_id=?", array($appraisal_id));
             $this->_getAppraisalStatus($appraisal_id);
+            $holds = $this->quickBuild("Hold Reasons","HoldsDAO", "appraisal_id=?", array($appraisal_id), array(
+                "hookData"  => array(
+                    "hold_type_id" => array(
+                        "table" => "hold_types",
+                        "display"   => array("hold_type_desc","comment_required_flag")
+                    )
+                )
+            ));
             $this->getAppraisalProducts($appraisal_id);
 
             $requested_by = $this->quickBuild("Requested By","UsersDAO", "user_id=?", array($appraisals[0]['requested_by']));
@@ -4385,7 +4393,7 @@ B.body,  B.message_to , B.message_from, B.last_attempted_timestamp, E.event_date
                 }
                 if(isset($options['hookData']) && isset($options['hookData'][$col])) {
                     if(isset($options['hookData'][$col]['table']) && isset($options['hookData'][$col]['display'])) {
-                        $_column = !isset($options['hookData'][$col]['column']) ? $options['hookData'][$col] : $options['hookData'][$col]['column'];
+                        $_column = !isset($options['hookData'][$col]['column']) ? $col : $options['hookData'][$col]['column'];
                         if(!is_array($options['hookData'][$col]['display'])) {
                             $options['hookData'][$col]['display'] = array($options['hookData'][$col]['display']);
                         }
