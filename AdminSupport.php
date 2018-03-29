@@ -770,9 +770,40 @@ class specials_AdminSupport extends specials_baseSpecials
             $this->quickBuild("AMC","PartiesDAO", "party_id=?", array($appraisals[0]['amc_id']));
             $this->quickBuild("Payment Processing Log","PaymentProcessingResultLogDAO", "appraisal_id=?", array($appraisal_id));
             $this->quickBuild("Wallet","WalletPartialPaymentInformationDAO", "appraisal_id=?", array($appraisal_id));
+            $this->quickBuild("Partial Payment","WalletPartialPaymentInformationDAO", "appraisal_id=?", array($appraisal_id));
             $this->_getAppraisalWorkFlowHistory($appraisal_id);
             $this->_getAppraisalEmail($appraisal_id, "");
         }
+    }
+
+    public function _needToGenerateCompletedDocs($appraisal_id) {
+        // Generate the Document if this is the first time reach completed status
+        $statusCount = $this->_getDAO('AppraisalStatusHistoryDAO')->appraisalStatusCount($appraisal_id, AppraisalStatus::COMPLETED);
+        if($statusCount == 1) return true;
+
+        // If we completed the order more than once, ONLY proceed if we have a new appraisal report
+        $reports = $this->_getDAO('FilesDAO')->getARSinceLastCompleted($appraisal_id);
+        return count($reports) > 0;
+    }
+
+    private function _doWeSendBorrowerReport($appraisal)
+    {
+        if ($this->_getDAO('AppraisalStatusHistoryDAO')
+                ->appraisalStatusCount($appraisal->APPRAISAL_ID, AppraisalStatus::COMPLETED) > 1
+            && $this->_locationConfig()->isEnabled('NO_RESEND_BO_APP_REPORT', $appraisal->PARTY_ID)) {
+            return false;
+        }
+        $sendBorrowerReport = $this->_locationConfig()->isEnabled('SEND_BORROWER_APPRAISAL_REPORT', $appraisal->PARTY_ID, $appraisal->APPRAISER_ID, $appraisal->AMC_ID);
+        $approveFinalReport = $this->_locationConfig()->isEnabled('APPROVE_FINAL_APPRAISAL_REPORT', $appraisal->PARTY_ID);
+
+        //Check is AMC_ID matches any of the config IDs
+        $OverRideBorrowerConfigbyPartyID = $this->_locationConfig()
+            ->isEnabled('SEND_BORROWER_APP_RPT_BY_PARTY_ID', $appraisal->PARTY_ID);
+
+        if (($sendBorrowerReport && !$approveFinalReport) || $OverRideBorrowerConfigbyPartyID) {
+            return true;
+        }
+        return false;
     }
 
     public function menu_tools_utils_fix_completed_email_missing() {
@@ -808,11 +839,19 @@ class specials_AdminSupport extends specials_baseSpecials
                 $jobs = $this->sqlSchema($schema,$sql, array($date_time))->GetRows();
                 foreach($jobs as $job) {
                     $appraisal_id = $job['appraisal_id'];
+                    if(empty($appraisal_id)) {
+                        continue;
+                    }
                     echo $appraisal_id." => ";
                     $appraisal = $this->sqlSchema($schema, "SELECT * FROM appraisals where appraisal_id= ?", array($appraisal_id))->fetchObject();
                     $party_id = $appraisal->PARTY_ID;
-                    if($this->getConfigSchemaValue($schema,"SEND_BORROWER_APPRAISAL_REPORT", $party_id) !== "t") {
+                    if($this->getConfigSchemaValue($schema,"SEND_BORROWER_APPRAISAL_REPORT", $party_id) !== "t"
+                        || !$this->_doWeSendBorrowerReport($appraisal)) {
                         echo " Site Disabled Send Borrower Report <br>";
+                        continue;
+                    }
+                    if(!$this->_needToGenerateCompletedDocs($appraisal_id)) {
+                        echo " No need to Generate Report <br>";
                         continue;
                     }
                     $borrower_email = $appraisal->BORROWER1_EMAIL;
