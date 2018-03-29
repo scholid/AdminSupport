@@ -776,34 +776,62 @@ class specials_AdminSupport extends specials_baseSpecials
         }
     }
 
-    public function _needToGenerateCompletedDocs($appraisal_id) {
-        // Generate the Document if this is the first time reach completed status
-        $statusCount = $this->_getDAO('AppraisalStatusHistoryDAO')->appraisalStatusCount($appraisal_id, AppraisalStatus::COMPLETED);
-        if($statusCount == 1) return true;
-
-        // If we completed the order more than once, ONLY proceed if we have a new appraisal report
-        $reports = $this->_getDAO('FilesDAO')->getARSinceLastCompleted($appraisal_id);
-        return count($reports) > 0;
-    }
-
-    private function _doWeSendBorrowerReport($appraisal)
+    private function _doWeSendBorrowerReport($schema, $appraisal)
     {
-        if ($this->_getDAO('AppraisalStatusHistoryDAO')
-                ->appraisalStatusCount($appraisal->APPRAISAL_ID, AppraisalStatus::COMPLETED) > 1
-            && $this->_locationConfig()->isEnabled('NO_RESEND_BO_APP_REPORT', $appraisal->PARTY_ID)) {
-            return false;
+        $appraisal_id = $appraisal->APPRAISAL_ID;
+        $q = 'select count(appraisal_status_history_id) as status_count 
+		        from appraisal_status_history 
+		       where status_type_id=? and appraisal_id=?';
+
+        $obj = $this->sqlSchema($schema, $q,array(AppraisalStatus::COMPLETED,$appraisal_id))->FetchNextObject();
+
+        if($obj->STATUS_COUNT > 1 && $this->getConfigSchemaValue($schema,'NO_RESEND_BO_APP_REPORT', $appraisal->PARTY_ID) == 't') {
+            return true;
         }
-        $sendBorrowerReport = $this->_locationConfig()->isEnabled('SEND_BORROWER_APPRAISAL_REPORT', $appraisal->PARTY_ID, $appraisal->APPRAISER_ID, $appraisal->AMC_ID);
-        $approveFinalReport = $this->_locationConfig()->isEnabled('APPROVE_FINAL_APPRAISAL_REPORT', $appraisal->PARTY_ID);
+
+
+        $sendBorrowerReport = $this->getConfigSchemaValue($schema,'SEND_BORROWER_APPRAISAL_REPORT', $appraisal->PARTY_ID) == 't';
+        $approveFinalReport = $this->getConfigSchemaValue($schema,'APPROVE_FINAL_APPRAISAL_REPORT', $appraisal->PARTY_ID) == 't';
 
         //Check is AMC_ID matches any of the config IDs
-        $OverRideBorrowerConfigbyPartyID = $this->_locationConfig()
-            ->isEnabled('SEND_BORROWER_APP_RPT_BY_PARTY_ID', $appraisal->PARTY_ID);
+        $OverRideBorrowerConfigbyPartyID = $this->getConfigSchemaValue($schema, 'SEND_BORROWER_APP_RPT_BY_PARTY_ID', $appraisal->PARTY_ID) == 't';
 
         if (($sendBorrowerReport && !$approveFinalReport) || $OverRideBorrowerConfigbyPartyID) {
             return true;
         }
         return false;
+    }
+
+
+    public function _needToGenerateCompletedDocs($schema, $appraisal_id) {
+        // Generate the Document if this is the first time reach completed status
+        $q = 'select count(appraisal_status_history_id) as status_count 
+		        from appraisal_status_history 
+		       where status_type_id=? and appraisal_id=?';
+
+        $obj = $this->sqlSchema($schema, $q,array(9,$appraisal_id))->FetchNextObject();
+
+        if($obj->STATUS_COUNT == 1) {
+            return true;
+        }
+
+        // If we completed the order more than once, ONLY proceed if we have a new appraisal report
+        $sql = "
+			SELECT file_id, upload_time
+			FROM file_metadata as fm
+			JOIN
+			(
+				SELECT appraisal_id, status_date
+				FROM appraisal_status_history
+				WHERE appraisal_id = ?
+					AND status_type_id = 9
+					AND updated_flag IS TRUE
+				ORDER BY status_date DESC
+				LIMIT 1
+			) as ash ON (ash.appraisal_id = fm.appraisal_id)
+			WHERE fm.form_type_id = 3
+				AND fm.upload_time > ash.status_date";
+        return $this->sqlSchema($schema, $sql, array($appraisal_id))->getRows() > 0;
     }
 
     public function menu_tools_utils_fix_completed_email_missing() {
@@ -882,15 +910,12 @@ class specials_AdminSupport extends specials_baseSpecials
                     echo $appraisal_id." {$job['status_date']} => ";
                     $appraisal = $this->sqlSchema($schema, "SELECT * FROM appraisals where appraisal_id= ?", array($appraisal_id))->fetchObject();
                     $party_id = $appraisal->PARTY_ID;
-                    if($this->getConfigSchemaValue($schema,"SEND_BORROWER_APPRAISAL_REPORT", $party_id) !== "t"
-                        || !$this->_doWeSendBorrowerReport($appraisal)) {
+                    if($this->getConfigSchemaValue($schema,"SEND_BORROWER_APPRAISAL_REPORT", $party_id) !== "t") {
                         echo " Site Disabled Send Borrower Report <br>";
                         continue;
                     }
-                    if(!$this->_needToGenerateCompletedDocs($appraisal_id)) {
-                        echo " No need to Generate Report <br>";
-                        continue;
-                    }
+
+
                     $borrower_email = $appraisal->BORROWER1_EMAIL;
                     if($borrower_email!="") {
                         echo " FOUND {$borrower_email} ";
@@ -909,9 +934,12 @@ class specials_AdminSupport extends specials_baseSpecials
                         if($email->NOTIFICATION_JOB_ID) {
                             echo " SENT ALREADY {$email->LAST_ATTEMPTED_TIMESTAMP} / {$email->TARGET_DATE} ";
                             // locate conditions
-                        } else {
+                        }
+                        elseif($this->_needToGenerateCompletedDocs($schema,$appraisal_id) && $this->_doWeSendBorrowerReport($schema, $appraisal)) {
                             echo " NOT SEND ";
                             $should_send = true;
+                        } else {
+                            echo " NO NEED TO SEND ";
                         }
 
                         if($should_send == true && $actionx == "send") {
