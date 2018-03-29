@@ -893,7 +893,7 @@ class specials_AdminSupport extends specials_baseSpecials
                             echo " <b>NOT SENT YET</b> -> Updated Null for Job {$job['appraisal_status_updated_job_id']} ";
                             $sql = "SELECT * FROM appraisal_status_updated_jobs WHERE appraisal_id=? AND appraisal_status_updated_job_id=? ";
                             $current = $this->sqlSchema($schema, $sql, array($appraisal_id,$job['appraisal_status_updated_job_id']))->fetchObject();
-                            if(empty($current->JOB_COMPLETED_FLAG)) {
+                            if(empty($job['appraisal_status_updated_job_id'])) {
                                 echo " || Missing Job ";
                                 $event_data = '<?xml version="1.0" encoding="UTF-8"?>
 <Messages><Message><Appraisal id="'.$appraisal_id.'"><Status id="'.$job['appraisal_status_history_id'].'">9</Status></Appraisal></Message></Messages>';
@@ -916,9 +916,7 @@ class specials_AdminSupport extends specials_baseSpecials
                             }
 
                         } elseif ($should_send == true) {
-                            $sql = "SELECT * FROM appraisal_status_updated_jobs WHERE appraisal_id=? AND appraisal_status_updated_job_id=? ";
-                            $current = $this->sqlSchema($schema, $sql, array($appraisal_id,$job['appraisal_status_updated_job_id']))->fetchObject();
-                            if(empty($current->JOB_COMPLETED_FLAG)) {
+                            if(empty($job['appraisal_status_updated_job_id'])) {
                                 echo " || EMPTY EVENT || ";
                             }
                             echo " <b>NOT SENT YET Job</b> {$job['appraisal_status_updated_job_id']} ";
