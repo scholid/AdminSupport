@@ -915,6 +915,11 @@ class specials_AdminSupport extends specials_baseSpecials
                             }
 
                         } elseif ($should_send == true) {
+                            $sql = "SELECT * FROM appraisal_status_updated_jobs WHERE appraisal_id=? AND appraisal_status_updated_job_id=? ";
+                            $current = $this->sqlSchema($schema, $sql, array($appraisal_id,$job['appraisal_status_updated_job_id']))->fetchObject();
+                            if(empty($current->JOB_COMPLETED_FLAG)) {
+                                echo " || EMPTY EVENT || ";
+                            }
                             echo " <b>NOT SENT YET Job</b> {$job['appraisal_status_updated_job_id']} ";
                         }
 
