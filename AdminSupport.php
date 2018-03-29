@@ -810,6 +810,7 @@ class specials_AdminSupport extends specials_baseSpecials
 
         $this->buildForm(array(
             $this->buildInput("date_time","From Date Time","text"),
+            $this->buildInput("to_date_time","To Date Time","text"),
             $this->buildInput("appraisal_id","Appraisal ID (optional)","text"),
             $this->buildInput("actionx","Action","select", $this->buildSelectOption(array(
                 "--"    => "----",
@@ -822,6 +823,7 @@ class specials_AdminSupport extends specials_baseSpecials
         $actionx = $this->getValue("actionx");
         $date_time = $this->getValue("date_time",@date("Y-m-d H:i:s","yesterday"));
         $look_appraisal_id = $this->getValue("appraisal_id","");
+        $to_date_time = $this->getValue("to_date_time");
         if(in_array($actionx , array("send","view")) && (!empty($date_time)||(!empty($look_appraisal_id)))) {
             echo "Check From Time {$date_time}";
             $schemas = $this->getAllSchema();
@@ -831,11 +833,16 @@ class specials_AdminSupport extends specials_baseSpecials
                     continue;
                 }
                 $big_where = 'AND ASH.status_date >= ? ';
-                $big_where_x = $date_time;
+                $big_where_x = array($date_time);
                 if(!empty($look_appraisal_id)) {
                     $big_where = " AND ASH.appraisal_id=? ";
-                    $big_where_x = $look_appraisal_id;
+                    $big_where_x = array($look_appraisal_id);
                 }
+                elseif(!empty($to_date_time)) {
+                    $big_where.= ' AND ASH.status_date <= ? ';
+                    $big_where_x[] = $to_date_time;
+                }
+                
                 $sql = "SELECT Job.*, ASH.*
 			FROM appraisal_status_history AS ASH
 			LEFT JOIN appraisal_status_updated_jobs AS Job ON (JOB.appraisal_status_history_id = ASH.appraisal_status_history_id )
@@ -843,7 +850,7 @@ class specials_AdminSupport extends specials_baseSpecials
 			AND ASH.status_type_id=9
 			{$big_where}
 			ORDER BY ASH.appraisal_id DESC ";
-                $jobs = $this->sqlSchema($schema,$sql, array($big_where_x))->GetRows();
+                $jobs = $this->sqlSchema($schema,$sql, $big_where_x)->GetRows();
                 if(!empty($look_appraisal_id)) {
                     echo "<pre>";
                     print_r($jobs);
