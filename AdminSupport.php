@@ -13,9 +13,9 @@ wget --no-cache https://raw.githubusercontent.com/khoaofgod/AdminSupport/master/
 ini_set('include_path','.:../includes/:../includes/libs/:/usr/share/pear/:/var/www/tandem.inhouse-solutions.com/includes/:/var/www/tandem.inhouse-solutions.com/includes/libs/');
 ini_set('display_errors', 1);
 ini_set('display_startup_errors', 1);
-ini_set('max_execution_time', 600);
+ini_set('max_execution_time', 3600);
 
-set_time_limit(1800);
+set_time_limit(3600);
 ini_set('memory_limit', -1);
 error_reporting(E_ALL & ~E_WARNING & ~E_NOTICE);
 
