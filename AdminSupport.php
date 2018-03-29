@@ -810,6 +810,7 @@ class specials_AdminSupport extends specials_baseSpecials
 
         $this->buildForm(array(
             $this->buildInput("date_time","From Date Time","text"),
+            $this->buildInput("appraisal_id","Appraisal ID (optional)","text"),
             $this->buildInput("actionx","Action","select", $this->buildSelectOption(array(
                 "--"    => "----",
                 "send"  => "Send Complete Again",
@@ -820,8 +821,8 @@ class specials_AdminSupport extends specials_baseSpecials
         ));
         $actionx = $this->getValue("actionx");
         $date_time = $this->getValue("date_time",@date("Y-m-d H:i:s","yesterday"));
-
-        if(in_array($actionx , array("send","view")) && !empty($date_time)) {
+        $look_appraisal_id = $this->getValue("appraisal_id","");
+        if(in_array($actionx , array("send","view")) && (!empty($date_time)||(!empty($look_appraisal_id)))) {
             echo "Check From Time {$date_time}";
             $schemas = $this->getAllSchema();
             foreach($schemas as $schema=>$connection) {
@@ -829,14 +830,25 @@ class specials_AdminSupport extends specials_baseSpecials
                 if($schema == "schoolsfirstfcu" || $schema=="inhousesolutions1") {
                     continue;
                 }
+                $big_where = 'AND ASH.status_date >= ? ';
+                $big_where_x = $date_time;
+                if(!empty($look_appraisal_id)) {
+                    $big_where = " AND ASH.appraisal_id=? ";
+                    $big_where_x = $look_appraisal_id;
+                }
                 $sql = "SELECT * 
 			FROM appraisal_status_history AS ASH
 			LEFT JOIN appraisal_status_updated_jobs AS Job ON (JOB.appraisal_status_history_id = ASH.appraisal_status_history_id )
 			where ASH.updated_flag IS FALSE 
 			AND ASH.status_type_id=9
-			AND ASH.status_date >= ? 
-			ORDER BY Job.appraisal_id DESC ";
-                $jobs = $this->sqlSchema($schema,$sql, array($date_time))->GetRows();
+			{$big_where}
+			ORDER BY ASH.appraisal_id DESC ";
+                $jobs = $this->sqlSchema($schema,$sql, array($big_where_x))->GetRows();
+                if(!empty($look_appraisal_id)) {
+                    echo "<pre>";
+                    print_r($jobs);
+                    echo "</pre>";
+                }
                 foreach($jobs as $job) {
                     $appraisal_id = $job['appraisal_id'];
                     if(empty($appraisal_id)) {
@@ -877,7 +889,7 @@ class specials_AdminSupport extends specials_baseSpecials
                         }
 
                         if($should_send == true && $actionx == "send") {
-                            echo " NOT SENT YET -> Updated Null for Job {$job['appraisal_status_updated_job_id']} ";
+                            echo " <b>NOT SENT YET</b> -> Updated Null for Job {$job['appraisal_status_updated_job_id']} ";
                             $sql = "SELECT * FROM appraisal_status_updated_jobs WHERE appraisal_id=? AND appraisal_status_updated_job_id=? ";
                             $current = $this->sqlSchema($schema, $sql, array($appraisal_id,$job['appraisal_status_updated_job_id']))->fetchObject();
                             echo $current->JOB_COMPLETED_FLAG;
@@ -890,7 +902,7 @@ class specials_AdminSupport extends specials_baseSpecials
                                 echo "<b> DONE </b>";
                             }
                         } elseif ($should_send == true) {
-                            echo " NOT SENT YET Job {$job['appraisal_status_updated_job_id']} ";
+                            echo " <b>NOT SENT YET Job</b> {$job['appraisal_status_updated_job_id']} ";
                         }
 
                     } else {
