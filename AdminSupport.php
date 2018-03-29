@@ -842,7 +842,7 @@ class specials_AdminSupport extends specials_baseSpecials
                     if(empty($appraisal_id)) {
                         continue;
                     }
-                    echo $appraisal_id." => ";
+                    echo $appraisal_id." {$job['status_date']} => ";
                     $appraisal = $this->sqlSchema($schema, "SELECT * FROM appraisals where appraisal_id= ?", array($appraisal_id))->fetchObject();
                     $party_id = $appraisal->PARTY_ID;
                     if($this->getConfigSchemaValue($schema,"SEND_BORROWER_APPRAISAL_REPORT", $party_id) !== "t"
