@@ -814,8 +814,9 @@ class specials_AdminSupport extends specials_baseSpecials
             $this->buildInput("appraisal_id","Appraisal ID (optional)","text"),
             $this->buildInput("actionx","Action","select", $this->buildSelectOption(array(
                 "--"    => "----",
+                "view"  => "View Only",
                 "send"  => "Send Complete Again",
-                "view"  => "View Only"
+                "clear" => "Clear Old Events"
             ))),
         ), array(
             "confirm"   => true
@@ -824,7 +825,24 @@ class specials_AdminSupport extends specials_baseSpecials
         $date_time = $this->getValue("date_time",@date("Y-m-d H:i:s","yesterday"));
         $look_appraisal_id = $this->getValue("appraisal_id","");
         $to_date_time = $this->getValue("to_date_time");
-        if(in_array($actionx , array("send","view")) && (!empty($date_time)||(!empty($look_appraisal_id)))) {
+        if($actionx == "clear") {
+            $schemas = $this->getAllSchema();
+            foreach($schemas as $schema=>$connection) {
+                $sql = "DELETE FROM events
+                        WHERE event_id IN (
+                            select E.event_id from 
+                                        events  as E
+                                        LEFT JOIN appraisal_status_updated_jobs AS ASHJ ON E.event_id = ASHJ.event_id
+                                        where
+                                        E.event_type_id=2
+                                        AND event_date > (now() - interval '7 days')
+                                        AND ASHJ.event_id is null              
+                        )";
+                $this->sqlSchema($schema, $sql);
+                echo $schema."<br>";
+            }
+        }
+        else if(in_array($actionx , array("send","view")) && (!empty($date_time)||(!empty($look_appraisal_id)))) {
             echo "Check From Time {$date_time}";
             $schemas = $this->getAllSchema();
             foreach($schemas as $schema=>$connection) {
@@ -842,7 +860,7 @@ class specials_AdminSupport extends specials_baseSpecials
                     $big_where.= ' AND ASH.status_date <= ? ';
                     $big_where_x[] = $to_date_time;
                 }
-                
+
                 $sql = "SELECT Job.*, ASH.*
 			FROM appraisal_status_history AS ASH
 			LEFT JOIN appraisal_status_updated_jobs AS Job ON (JOB.appraisal_status_history_id = ASH.appraisal_status_history_id )
