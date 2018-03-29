@@ -836,7 +836,7 @@ class specials_AdminSupport extends specials_baseSpecials
                     $big_where = " AND ASH.appraisal_id=? ";
                     $big_where_x = $look_appraisal_id;
                 }
-                $sql = "SELECT ASH.appraisal_id as appraisal_id, ASH.* , Job.*
+                $sql = "SELECT Job.*, ASH.*
 			FROM appraisal_status_history AS ASH
 			LEFT JOIN appraisal_status_updated_jobs AS Job ON (JOB.appraisal_status_history_id = ASH.appraisal_status_history_id )
 			where ASH.updated_flag IS FALSE 
