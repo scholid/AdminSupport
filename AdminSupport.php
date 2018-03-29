@@ -873,7 +873,8 @@ class specials_AdminSupport extends specials_baseSpecials
                         $sql = "SELECT * 
 					FROM notification_jobs_appraisals JA 
 					INNER JOIN notification_jobs AS NJ ON JA.notification_job_id=NJ.notification_job_id 
-					WHERE JA.appraisal_id= ? AND NJ.message_to=? AND NJ.body like '%Completed%' and NJ.subject like 'Status Updated%' 
+					WHERE JA.appraisal_id= ? AND NJ.message_to=? AND 
+					((NJ.body like '%Completed%' and NJ.subject like 'Status Updated%') OR (NJ.subject like 'Download report for%'))
 					AND (NJ.last_attempted_timestamp >= ? OR NJ.target_date >= ?)
 					
 					LIMIT 1";
