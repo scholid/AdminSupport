@@ -892,15 +892,28 @@ class specials_AdminSupport extends specials_baseSpecials
                             echo " <b>NOT SENT YET</b> -> Updated Null for Job {$job['appraisal_status_updated_job_id']} ";
                             $sql = "SELECT * FROM appraisal_status_updated_jobs WHERE appraisal_id=? AND appraisal_status_updated_job_id=? ";
                             $current = $this->sqlSchema($schema, $sql, array($appraisal_id,$job['appraisal_status_updated_job_id']))->fetchObject();
-                            echo $current->JOB_COMPLETED_FLAG;
-                            if(is_null($current->JOB_COMPLETED_FLAG) && $current->JOB_COMPLETED_FLAG!=true) {
-                                echo "<i> Already NULLED </i> ";
-                            } else {
-                                // doing update
-                                $sql = "UPDATE appraisal_status_updated_jobs set job_completed_flag=null WHERE appraisal_id=? AND appraisal_status_updated_job_id=? ";
-                                $this->sqlSchema($schema, $sql, array($appraisal_id,$job['appraisal_status_updated_job_id']));
-                                echo "<b> DONE </b>";
+                            if(empty($current->JOB_COMPLETED_FLAG)) {
+                                echo " || Missing Job ";
+                                $event_data = '<?xml version="1.0" encoding="UTF-8"?>
+<Messages><Message><Appraisal id="'.$appraisal_id.'"><Status id="'.$job['appraisal_status_history_id'].'">9</Status></Appraisal></Message></Messages>';
+                                $sql = "INSERT INTO events (EVENT_TYPE_ID, EVENT_DATE, EVENT_DATA) VALUES(2,now(),?)";
+                                $this->sqlSchema($schema, $sql, array($event_data));
+
+                                $sql = "SELECT event_id FROM events order by event_id DESC LIMIT 1 ";
+                                $event_obj = $this->sqlSchema($schema, $sql)->fetchObject();
+                                echo " EVENT Created {$event_obj->EVENT_ID} ";
+                            }  else {
+                                echo $current->JOB_COMPLETED_FLAG;
+                                if(is_null($current->JOB_COMPLETED_FLAG) && $current->JOB_COMPLETED_FLAG!=true) {
+                                    echo "<i> Already NULLED </i> ";
+                                } else {
+                                    // doing update
+                                    $sql = "UPDATE appraisal_status_updated_jobs set job_completed_flag=null WHERE appraisal_id=? AND appraisal_status_updated_job_id=? ";
+                                    $this->sqlSchema($schema, $sql, array($appraisal_id,$job['appraisal_status_updated_job_id']));
+                                    echo "<b> DONE </b>";
+                                }
                             }
+
                         } elseif ($should_send == true) {
                             echo " <b>NOT SENT YET Job</b> {$job['appraisal_status_updated_job_id']} ";
                         }
