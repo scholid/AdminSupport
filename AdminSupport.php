@@ -850,7 +850,7 @@ class specials_AdminSupport extends specials_baseSpecials
             $this->buildInput("date_time","From Date Time","text"),
             $this->buildInput("to_date_time","To Date Time","text"),
             $this->buildInput("appraisal_id","Appraisal ID (optional)","text"),
-            $this->buildInput("search_in_schemas","Schemas (optional)","select", $my_schemas),
+            $this->buildInput("search_in_schemas","Schemas (optional)","select", $this->buildSelectOption($my_schemas)),
             $this->buildInput("actionx","Action","select", $this->buildSelectOption(array(
                 "--"    => "----",
                 "view"  => "View Only",
