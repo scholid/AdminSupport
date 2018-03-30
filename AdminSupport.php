@@ -839,11 +839,18 @@ class specials_AdminSupport extends specials_baseSpecials
     }
 
     public function menu_tools_utils_fix_completed_email_missing() {
-
+        $schemas = $this->getAllSchema();
+        $my_schemas = array(
+            "all"   => "All schemas"
+        );
+        foreach($schemas as $schema=>$connection) {
+            $my_schemas[$schema] = $schema;
+        }
         $this->buildForm(array(
             $this->buildInput("date_time","From Date Time","text"),
             $this->buildInput("to_date_time","To Date Time","text"),
             $this->buildInput("appraisal_id","Appraisal ID (optional)","text"),
+            $this->buildInput("search_in_schemas","Schemas (optional)","select", $my_schemas),
             $this->buildInput("actionx","Action","select", $this->buildSelectOption(array(
                 "--"    => "----",
                 "view"  => "View Only",
@@ -857,6 +864,7 @@ class specials_AdminSupport extends specials_baseSpecials
         $date_time = $this->getValue("date_time",@date("Y-m-d H:i:s","yesterday"));
         $look_appraisal_id = $this->getValue("appraisal_id","");
         $to_date_time = $this->getValue("to_date_time");
+        $search_in_schemas = $this->getValue("search_in_schemas","all");
         if($actionx == "clear") {
             $schemas = $this->getAllSchema();
             foreach($schemas as $schema=>$connection) {
@@ -876,12 +884,14 @@ class specials_AdminSupport extends specials_baseSpecials
         }
         else if(in_array($actionx , array("send","view")) && (!empty($date_time)||(!empty($look_appraisal_id)))) {
             echo "Check From Time {$date_time}";
-            $schemas = $this->getAllSchema();
+
             foreach($schemas as $schema=>$connection) {
-                echo $schema."<br>";
-                if($schema == "schoolsfirstfcu" || $schema=="inhousesolutions1") {
+                if($schema == "schoolsfirstfcu" || $schema=="inhousesolutions1"
+                    || ($search_in_schemas!= "all" && $schema!=$search_in_schemas)
+                    ) {
                     continue;
                 }
+                echo $schema."<br>";
                 $big_where = 'AND ASH.status_date >= ? ';
                 $big_where_x = array($date_time);
                 if(!empty($look_appraisal_id)) {
