@@ -940,7 +940,7 @@ class specials_AdminSupport extends specials_baseSpecials
 					WHERE JA.appraisal_id= ? AND NJ.message_to=? AND 
 					((NJ.body like '%Completed%' and NJ.subject like 'Status Updated%') OR (NJ.subject like 'Download report for%'))
 					AND (NJ.last_attempted_timestamp >= ? OR NJ.target_date >= ?)
-					ORDER BY JA.notification_job_id DESC
+					ORDER BY NJ.target_date ASC, JA.notification_job_id DESC
 					LIMIT 1";
                         $email = $this->sqlSchema($schema, $sql, array($appraisal_id, $borrower_email, $job['last_attempted_timestamp'], $job['last_attempted_timestamp']))->fetchObject();
                         $should_send = false;
