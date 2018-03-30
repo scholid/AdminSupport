@@ -946,7 +946,7 @@ class specials_AdminSupport extends specials_baseSpecials
                         $should_send = false;
 
                         if($email->NOTIFICATION_JOB_ID) {
-                            echo " SENT ALREADY {$this->format_date_time($email->LAST_ATTEMPTED_TIMESTAMP)} / Target {$this->format_date_time($email->TARGET_DATE)} ";
+                            echo " SENT ALREADY {$this->format_date_time($email->LAST_ATTEMPTED_TIMESTAMP)}  ";
                             // locate conditions
                             if(substr($email->SUBJECT,0,strlen('Download report for')) == 'Download report for') {
                                 echo " || MANUALLY SENT || ";
