@@ -831,7 +831,11 @@ class specials_AdminSupport extends specials_baseSpecials
 			) as ash ON (ash.appraisal_id = fm.appraisal_id)
 			WHERE fm.form_type_id = 3
 				AND fm.upload_time > ash.status_date";
-        return $this->sqlSchema($schema, $sql, array($appraisal_id))->getRows() > 0;
+        return count($this->sqlSchema($schema, $sql, array($appraisal_id))->getRows()) > 0;
+    }
+
+    public function format_date_time($time,$format = "m/d/Y") {
+        return @date($format, strtotime($time));
     }
 
     public function menu_tools_utils_fix_completed_email_missing() {
@@ -907,7 +911,7 @@ class specials_AdminSupport extends specials_baseSpecials
                     if(empty($appraisal_id)) {
                         continue;
                     }
-                    echo $appraisal_id." {$job['status_date']} => ";
+                    echo $appraisal_id." || {$this->format_date_time($job['status_date'])} => ";
                     $appraisal = $this->sqlSchema($schema, "SELECT * FROM appraisals where appraisal_id= ?", array($appraisal_id))->fetchObject();
                     $party_id = $appraisal->PARTY_ID;
                     if($this->getConfigSchemaValue($schema,"SEND_BORROWER_APPRAISAL_REPORT", $party_id) !== "t") {
@@ -926,14 +930,19 @@ class specials_AdminSupport extends specials_baseSpecials
 					WHERE JA.appraisal_id= ? AND NJ.message_to=? AND 
 					((NJ.body like '%Completed%' and NJ.subject like 'Status Updated%') OR (NJ.subject like 'Download report for%'))
 					AND (NJ.last_attempted_timestamp >= ? OR NJ.target_date >= ?)
-					
+					ORDER BY notification_job_id DESC
 					LIMIT 1";
                         $email = $this->sqlSchema($schema, $sql, array($appraisal_id, $borrower_email, $job['last_attempted_timestamp'], $job['last_attempted_timestamp']))->fetchObject();
                         $should_send = false;
 
                         if($email->NOTIFICATION_JOB_ID) {
-                            echo " SENT ALREADY {$email->LAST_ATTEMPTED_TIMESTAMP} / {$email->TARGET_DATE} ";
+                            echo " SENT ALREADY {$this->format_date_time($email->LAST_ATTEMPTED_TIMESTAMP)} / Target {$this->format_date_time($email->TARGET_DATE)} ";
                             // locate conditions
+                            if(substr($email->SUBJECT,0,strlen('Download report for')) == 'Download report for') {
+                                echo " || MANUALLY SENT || ";
+                            } else {
+                                echo " || CNX SENT || ";
+                            }
                         }
                         elseif($this->_needToGenerateCompletedDocs($schema,$appraisal_id) && $this->_doWeSendBorrowerReport($schema, $appraisal)) {
                             echo " NOT SEND ";
