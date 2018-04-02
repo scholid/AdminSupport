@@ -4238,7 +4238,7 @@ class specials_AdminSupport extends specials_baseSpecials
                 }
 
                 // clear old data
-
+                echo "<br>";
                 foreach($x as $party_id) {
 
                     $p1 = json_encode(array(
