@@ -41,6 +41,7 @@ require_once ('classes/AmcProductPricingRules.php');
 require_once("classes/invoices/PayerInvoiceFactory.php");
 require_once("classes/Configs/LocationConfig.php");
 require_once('classes/Wallet.php');
+require_once('modules/remote/admin/locations/ManageInternalLocation.php');
 
 @include('Net/SFTP.php');
 
@@ -4188,6 +4189,81 @@ class specials_AdminSupport extends specials_baseSpecials
                 "excel" => true
             ));
         }
+    }
+
+    protected function _getAllLocations($return_all_info = true) {
+        $obj = new stdClass();
+        $obj->PARTY_ID = 1;
+        $locations = $this->_getDAO("PartyHierarchyDAO")->GetDecendants($obj);
+        $s = array(1);
+        foreach($locations as $l) {
+            $s[] = $l->PARTY_ID;
+        }
+        return $s;
+    }
+
+    public function menu_tools_products_set_product_available() {
+        $this->buildForm(array(
+            $this->buildInput("input_file","CSV ( id, name, party=number or all )","file"),
+            $this->buildInput("actionx","Action","select", $this->buildSelectOption(array(
+                "---"   => "-----",
+                "clear" => "Reset Products Available Table"
+            )))
+        ), array(
+            "confirm"   => true
+        ));
+        $products = isset($_FILES['input_file']) ? $_FILES['input_file'] : null;
+        $parties = $this->_getAllLocations(false);
+        $actionx = $this->getValue("actionx","");
+        if (!empty($products) && $products['tmp_name']!="") {
+            $csv = $this->CSVToArray($products['tmp_name'], true, true);
+            if($actionx == "clear") {
+                $sql = "DELETE FROM appraisal_product_availability";
+                $this->query($sql);
+            }
+            foreach($csv as $item) {
+                $id = $item['id'];
+                $name = $item['name'];
+                $party = $item['party'];
+                if($party == 'all') {
+                    $x = $parties;
+                } else {
+                    $x = array($party);
+                }
+                if(empty($id) && !empty($name)) {
+                    // find id by name
+                    $sql = "SELECT * FROM appraisal_products where appraisal_product_name=? LIMIT 1";
+                    $t = $this->query($sql, array($name))->FetchObject();
+                    $id = $t->APPRAISAL_PRODUCT_ID;
+                }
+
+                // clear old data
+
+                foreach($x as $party_id) {
+
+                    $p1 = json_encode(array(
+                        "party_id"    => $party_id,
+                        "data"          => array(array(
+                            "section"   => "location_product_availability",
+                            "data"      =>  array(
+                                "appraisal_product_availability_id"    => "",
+                                "party_id"  => $party_id,
+                                "appraisal_product_id" => $id,
+                                "checked"   => true
+                            )
+                        ))
+                    ));
+
+                    echo " {$id} => $party_id  ";
+                    $Location = new ManageInternalLocation();
+                    $r = $this->jsonResult($Location->saveData($p1), $p1);
+                    echo "<br>";
+                }
+
+
+            }
+        }
+
     }
 
     public function buildSelectOptionFromDAO($dao_name, $extra = array()) {
