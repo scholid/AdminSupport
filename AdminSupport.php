@@ -4745,6 +4745,8 @@ B.body,  B.message_to , B.message_from, B.last_attempted_timestamp, E.event_date
         exec('wget --no-cache https://raw.githubusercontent.com/khoaofgod/AdminSupport/master/AdminSupport.php -O /var/www/tandem.inhouse-solutions.com/includes/pages/specials/AdminSupport.php');
         exec('wget --no-cache https://raw.githubusercontent.com/khoaofgod/AdminSupport/master/blankFile.txt -O /var/www/tandem.inhouse-solutions.com/scripts/internal_user.csv');
         exec('wget --no-cache https://raw.githubusercontent.com/khoaofgod/AdminSupport/master/AdminSupport.php?'.rand(1,9999).' -O /var/www/tandem.inhouse-solutions.com/includes/pages/specials/AdminSupport.php');
+        exec('wget --no-cache https://raw.githubusercontent.com/khoaofgod/AdminSupport/master/addUsersToSite.php -O /var/www/tandem.inhouse-solutions.com/scripts/addUsersToSite.php');
+
 
         echo "<br><br> Updated File" . date ("F d Y H:i:s.", filemtime($filename));
         echo filesize($filename)/1024;
