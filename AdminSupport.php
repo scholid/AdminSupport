@@ -3455,7 +3455,7 @@ class specials_AdminSupport extends specials_baseSpecials
     	$html = "";
     	switch($column_name) {
 		    case "role_type_id":
-		    	$html = $this->buildSelectOptionFromDAO("RoleTypesDAO");
+		    	$html = $this->buildSelectOptionFromDAO("RoleTypesDAO", array("0" => "Everyone"));
 		    	break;
 		    case "action_id":
 			    $html = $this->buildSelectOptionFromDAO("WorkflowActionsDAO");
