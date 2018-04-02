@@ -4184,7 +4184,9 @@ class specials_AdminSupport extends specials_baseSpecials
             echo "<br>";
             $data = $dao->execute($sql,
                 $post_data)->GetRows();
-            $this->buildJSTable($dao,$data);
+            $this->buildJSTable($dao,$data, array(
+                "excel" => true
+            ));
         }
     }
 
