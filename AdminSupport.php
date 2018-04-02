@@ -4195,11 +4195,8 @@ class specials_AdminSupport extends specials_baseSpecials
         $obj = new stdClass();
         $obj->PARTY_ID = 1;
         $locations = $this->_getDAO("PartyHierarchyDAO")->GetDecendants($obj);
-        $s = array(1);
-        foreach($locations as $l) {
-            $s[] = $l->PARTY_ID;
-        }
-        return $s;
+        $locations[]=1;
+        return $locations;
     }
 
     public function menu_tools_products_set_product_available() {
@@ -4212,8 +4209,11 @@ class specials_AdminSupport extends specials_baseSpecials
         ), array(
             "confirm"   => true
         ));
+
+
         $products = isset($_FILES['input_file']) ? $_FILES['input_file'] : null;
         $parties = $this->_getAllLocations(false);
+       // print_r($parties);
         $actionx = $this->getValue("actionx","");
         if (!empty($products) && $products['tmp_name']!="") {
             $csv = $this->CSVToArray($products['tmp_name'], true, true);
@@ -4225,7 +4225,7 @@ class specials_AdminSupport extends specials_baseSpecials
                 $id = $item['id'];
                 $name = $item['name'];
                 $party = $item['party'];
-                if($party == 'all') {
+                if(trim($party) == 'all') {
                     $x = $parties;
                 } else {
                     $x = array($party);
@@ -4238,7 +4238,7 @@ class specials_AdminSupport extends specials_baseSpecials
                 }
 
                 // clear old data
-                echo "<br>";
+
                 foreach($x as $party_id) {
 
                     $p1 = json_encode(array(
