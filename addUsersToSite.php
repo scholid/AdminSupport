@@ -214,7 +214,8 @@ class InHouseUser {
                         }
                     }
                     if(empty($UserClass->Parties)) {
-                        $UserClass->Parties[] = 1;
+                        // as appraiser, no party needed as default
+                       // $UserClass->Parties[] = 1;
                     }
 
                     // replace party name to $UserClass->Roles
@@ -251,7 +252,7 @@ class InHouseUser {
                         $rs = $ConnexionsDAO->Execute('select * from users where user_name=?', $User['username'])->fetchNextObj();
                         $user_id = $rs->user_id;
                         $contact_id = $rs->contact_id;
-
+                        $global_user_id = $this->getGlobalUserID($ConnexionsDAO,$User);
                      } else {
                         // do update
                         echo " Updating ...";
@@ -338,7 +339,33 @@ class InHouseUser {
                         // city
                         // state
                         // zipcode
+                        if(isset($User['office_phone']) && !empty($User['office_phone'])) {
+                            $sql = " UPDATE contacts set office_phone=? WHERE contact_id=? ";
+                            $ConnexionsDAO->Execute($sql,array($User['office_phone'],$contact_id));
+                        }
 
+                        if(isset($User['time_zone']) && $User['time_zone']!='') {
+                                if(!is_numeric($User['time_zone'])) {
+                                    $timezones = array_flip(array(
+                                        "-9"    =>  strtoupper("Alaska Standard Time"),
+                                        "-8"    =>  strtoupper("Pacific Standard Time"),
+                                        "-7"    => strtoupper("Mountain Standard Time"),
+                                        "-6"    => strtoupper("Central Standard Time"),
+                                        "-5"    => strtoupper("Eastern Standard Time"),
+                                    ));
+                                    $time_zone = isset($timezones[strtoupper($User['time_zone'])]) ? $timezones[strtoupper($User['time_zone'])] : -5;
+                                }elseif(in_array($User['time_zone'], array(-9,-8,-7,-6,-5))) {
+                                    $time_zone = $User['time_zone'];
+                                } else {
+                                    $time_zone = $User['time_zone'];
+                                }
+                                $sql = "UPDATE contacts SET contact_timezone=? where contact_id=? ";
+                                $ConnexionsDAO->Execute($sql,array($time_zone,$contact_id));
+                        }
+                        if(isset($User['password']) && $User['password']!='' && $global_user_id!='') {
+                            $sql = "update commondata.global_users set password=? , salt=? where global_user_id=?";
+                            $ConnexionsDAO->Execute($sql,array(md5($User['password']),'', $global_user_id));
+                        }
 
                         // license_level, license_exp, license_state
 
