@@ -1083,7 +1083,7 @@ class specials_AdminSupport extends specials_baseSpecials
 
     var $cache = array();
     public function cacheSet($key, $value, $time = 3600) {
-        $this->cache[$key] = array(
+        $_SESSION['ADMINSUPPORT'][$key] = array(
             "value" => $value,
             "time"  => @date("U") + $time
         );
@@ -1092,7 +1092,7 @@ class specials_AdminSupport extends specials_baseSpecials
 
     public function cacheGet($key) {
         $this->cacheRead();
-        $cache = isset($this->cache[$key]) ? $this->cache[$key] : null;
+        $cache = isset($_SESSION['ADMINSUPPORT'][$key]) ? $_SESSION['ADMINSUPPORT'][$key] : null;
         if(empty($cache)) {
             return null;
         }
@@ -1104,17 +1104,17 @@ class specials_AdminSupport extends specials_baseSpecials
     }
 
     public function cacheDelete($key) {
-        unset($this->cache[$key]);
+        unset($_SESSION['ADMINSUPPORT'][$key]);
         $this->cacheWrite();
     }
 
     public function cacheWrite() {
-        $_SESSION['caching_support'] = $this->cache;
+        // write to file;
     }
 
     public function cacheRead() {
-        if(empty($this->cache) && isset($_SESSION['caching_support'])) {
-            $this->cache = $_SESSION['caching_support'];
+        if(!isset($_SESSION['ADMINSUPPORT'])) {
+            $_SESSION['ADMINSUPPORT'] = array();
         }
     }
 
