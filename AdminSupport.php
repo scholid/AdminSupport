@@ -259,12 +259,12 @@ class specials_AdminSupport extends specials_baseSpecials
         }
         if(!empty($address_custom)) {
             echo "<pre>";
-            print_r($this->GetGeo($address_custom));
+            print_r($this->GetGeo($address_custom,"", true));
             echo "</pre>";
         }
     }
 
-    public function GetGeo($address, $input_token = "") {
+    public function GetGeo($address, $input_token = "", $debug = false) {
         $ret = null;
         $Transmitter = new Transmitter();
         $returnValue = null;
@@ -285,6 +285,10 @@ class specials_AdminSupport extends specials_baseSpecials
 
         if(200 == $ret['HTTP_CODE']){
             $json = json_decode($ret['RETURN']);
+            if($debug) {
+                print_r($json);
+            }
+
             switch($json->status){
                 case 'OK':
                 case 'ZERO_RESULTS':
@@ -317,7 +321,7 @@ class specials_AdminSupport extends specials_baseSpecials
 
         if($geo_failed && $input_token == "") {
             // try 1 more time with backup token from google.ini
-            return $this->GetGeo($address, $backup_token);
+            return $this->GetGeo($address, $backup_token, $debug);
         }
 
         return $returnValue;
