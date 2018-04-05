@@ -2577,7 +2577,7 @@ class specials_AdminSupport extends specials_baseSpecials
 	                }
 
 	                if($r['locations']!="") {
-	                    $location_ids = $this->getPartyIDsByLocation($r['locations'],"||");
+	                    $location_ids = $this->getPartyIDsByLocation($r['locations'],",");
 
 		                $p1 = json_encode(array(
 			                "contact_id"    => $contact_id,
@@ -2723,11 +2723,16 @@ class specials_AdminSupport extends specials_baseSpecials
      * @param string $sep
      * @return array
      */
-    public function getPartyIDsByLocation($locations, $sep = "||") {
+    public function getPartyIDsByLocation($locations, $sep = ",") {
         $locations = explode($sep, $locations);
         $ids = array();
         foreach($locations as $location_name) {
-            $id = $this->getPartyIdByLocation($location_name);
+            if(is_numeric($location_name)) {
+                $id = $location_name;
+            } else {
+                $id = $this->getPartyIdByLocation($location_name);
+            }
+
             if(!empty($id)) {
                 $ids[] = $id;
             }
