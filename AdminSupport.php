@@ -42,6 +42,7 @@ require_once("classes/invoices/PayerInvoiceFactory.php");
 require_once("classes/Configs/LocationConfig.php");
 require_once('classes/Wallet.php');
 require_once('modules/remote/admin/locations/ManageInternalLocation.php');
+require_once('classes/GoogleSettings.php');
 
 @include('Net/SFTP.php');
 
@@ -241,6 +242,85 @@ class specials_AdminSupport extends specials_baseSpecials
 
     protected function isCmd() {
     	return !empty($this->argv);
+    }
+
+    public function menu_tools_google_check_google_api() {
+        $this->buildForm(array(
+            $this->buildInput("appraisal_id","Appraisal ID","text"),
+            $this->buildInput("address_custom","OR Custom Address","text"),
+        ));
+        $appraisal_id = $this->getValue("appraisal_id");
+        $address_custom = $this->getValue("address_custom");
+        if(!empty($appraisal_id)) {
+            $std = new stdClass();
+            $std->APPRAISAL_ID = $appraisal_id;
+            $appraisal = $this->_getDAO("AppraisalsDAO")->get($std);
+            $address_custom = "{$appraisal->ZIPCODE}";
+        }
+        if(!empty($address_custom)) {
+            echo "<pre>";
+            print_r($this->GetGeo($address_custom));
+            echo "</pre>";
+        }
+    }
+
+    public function GetGeo($address, $input_token = "") {
+        $ret = null;
+        $Transmitter = new Transmitter();
+        $returnValue = null;
+        $address = urlencode($address);
+        $google = GoogleSettings::get();
+        // from @abdur as 12/21 , 2500 request per day
+        $backup_token = 'AIzaSyAsWu9i84tiquv04pGDXPumQLSIhbJxTEA';
+        // from @abdur as jan/2018 , 25,000 request per day
+        $default_token = $google['token'];
+
+        $geo_token = $input_token!= "" ? $input_token : $default_token;
+        $url = "https://maps.google.com/maps/api/geocode/json?address=$address&sensor=false&key={$geo_token}";
+        $geo_failed = true;
+        try{
+            $ret = $Transmitter->FetchUrl($url);
+        } catch(NetworkingException $ne){
+        }
+
+        if(200 == $ret['HTTP_CODE']){
+            $json = json_decode($ret['RETURN']);
+            switch($json->status){
+                case 'OK':
+                case 'ZERO_RESULTS':
+                    if('OK' == $json->status){
+                        $returnValue->LATITUDE = $json->results[0]->geometry->location->lat;
+                        $returnValue->LONGITUDE = $json->results[0]->geometry->location->lng;
+                        foreach ($json->results[0]->address_components as $address_component)
+                        {
+                            if(in_array('administrative_area_level_2',$address_component->types))
+                            {
+                                $returnValue->COUNTY = $address_component->long_name;
+                            }
+                        }
+
+                        if(!empty($returnValue->LATITUDE) && $returnValue->LATITUDE != 'NaN') {
+                            $geo_failed = false;
+                        }
+
+                    } else {
+                        $returnValue->LATITUDE = 'NaN';
+                        $returnValue->LONGITUDE = 'NaN';
+                        $returnValue->COUNTY = null;
+                    }
+                    break;
+                default:
+                    //mark error?  try again later?
+                    break;
+            }
+        }
+
+        if($geo_failed && $input_token == "") {
+            // try 1 more time with backup token from google.ini
+            return $this->GetGeo($address, $backup_token);
+        }
+
+        return $returnValue;
     }
 
     public function menu_appraisals_status_change_to_any_status() {
@@ -1122,7 +1202,7 @@ class specials_AdminSupport extends specials_baseSpecials
 
     public function getTablesFromSchema($json = true) {
         $OPTIONS = SystemSettings::get();
-        $key = "table_".$OPTIONS['PG_SQL']['USER'];
+        $key = "table_list";
         $x = $this->cacheGet($key);
         if(empty($x)) {
             $sql = "SELECT table_name FROM information_schema.tables WHERE table_schema=? OR table_schema=? OR table_schema='commondata' 
