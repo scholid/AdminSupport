@@ -4453,7 +4453,9 @@ B.body,  B.message_to , B.message_from, B.last_attempted_timestamp, E.event_date
               LIMIT 500
               ";
         $rows = $this->_getDAO("AppraisalsDAO")->Execute($sql, $data_exe)->GetRows();
-        $this->buildJSTable($this->_getDAO("NotificationJobsDAO"), $rows);
+        $this->buildJSTable($this->_getDAO("NotificationJobsDAO"), $rows, array(
+            "excel" => true
+        ));
     }
 
     public function _buildInputAttr($options) {
