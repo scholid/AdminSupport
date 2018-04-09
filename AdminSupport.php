@@ -1244,12 +1244,13 @@ class specials_AdminSupport extends specials_baseSpecials
 	    $original_body = $this->getValue("email_body","");
 
     	$this->buildForm(array(
-    		$this->buildInput("username_list","Username List(,)","textarea",$username_list),
-		    $this->buildInput("appraisal_id","Appraisal ID","text",$appraisal_id),
+    		$this->buildInput("username_list","Username List(,) or Line by Line.","textarea",$username_list),
+		    $this->buildInput("appraisal_id","Appraisal ID (optional)","text",$appraisal_id),
 		    $this->buildInput("subject", "Subject","text",$original_subject),
 		    $this->buildInput("send_from", "Send From","text", $send_from),
 			$this->buildInput("email_body", "Email Body","textarea", $original_body)
 	    ));
+    	echo "Email Body is HTML code. tags allowed: [[first_name]] [[last_name]] [[user_name]], before sending out email, try with ur username for testing first.";
 
     	if($username_list!="" && $original_subject!="" && $original_body!="" && $send_from!="") {
     		$username_list = explode("\n",$username_list);
