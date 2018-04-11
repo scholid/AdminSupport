@@ -2905,6 +2905,11 @@ class specials_AdminSupport extends specials_baseSpecials
     }
 
     public function cronjobs($return = false) {
+        if($return === true) {
+            $sql = "SELECT COUNT(*) as total FROM commondata.cronjobs WHERE enabled_flag IS NOT TRUE OR notification_flag IS NOT FALSE ";
+            return $this->query($sql)->fetchObject()->TOTAL;
+        }
+
         $this->buildForm(array(
             $this->buildInput("actionx","Options","select", $this->buildSelectOption(array(
                 "---"   => "Nothing",
@@ -2918,10 +2923,7 @@ class specials_AdminSupport extends specials_baseSpecials
             $sql = "DELETE FROM commondata.cronjob_exceptions ";
             $this->query($sql);
         }
-        if($return === true) {
-            $sql = "SELECT COUNT(*) as total FROM commondata.cronjobs WHERE enabled_flag IS NOT TRUE OR notification_flag IS NOT FALSE ";
-            return $this->query($sql)->fetchObject()->TOTAL;
-        }
+        
         $sql = "SELECT * FROM commondata.cronjob_exceptions ORDER BY cronjob_exception_id DESC LIMIT 1";
         $this->buildJSTable($this->_getDAO("CronjobsDAO"), $this->query($sql)->GetRows(), array(
             "viewOnly"  => true
