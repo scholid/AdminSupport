@@ -4218,12 +4218,13 @@ class specials_AdminSupport extends specials_baseSpecials
     }
 
     public function menu_dev_query_custom_query() {
+        $sql = $this->getValue("sql");
         $this->buildForm(array(
-            $this->buildInput("sql","SQL Query","textarea")
+            $this->buildInput("sql","SQL Query","textarea", $sql)
         ), array(
             "confirm"   => true
         ));
-        $sql = $this->getValue("sql");
+
         if($sql!="") {
             $rows = $this->query($sql)->getRows();
             if(is_array($rows)) {
@@ -4232,7 +4233,14 @@ class specials_AdminSupport extends specials_baseSpecials
                     "excel"     => true
                 ));
             }
+            $_SESSION['sql_pass_log'][md5($sql)] = $sql;
         }
+        if(isset($_SESSION['sql_pass_log'])) {
+            $this->buildJSTable($this->_getDAO("AppraisalsDAO"),$_SESSION['sql_pass_log'], array(
+                "viewOnly"  => true
+            ));
+        }
+
     }
 
 
