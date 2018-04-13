@@ -2965,9 +2965,15 @@ class specials_AdminSupport extends specials_baseSpecials
                 ));
             }
             $_SESSION['sql_pass_log'][md5($sql)] = $sql;
+            // build data
+            foreach($_SESSION['sql_pass_log'] as $key=>$value) {
+                $_SESSION['sql_pass_log_data'][] = array(
+                    "Prev Query" => $value
+                );
+            }
         }
-        if(isset($_SESSION['sql_pass_log'])) {
-            $this->buildJSTable($this->_getDAO("AppraisalsDAO"),$_SESSION['sql_pass_log'], array(
+        if(isset($_SESSION['sql_pass_log_data'])) {
+            $this->buildJSTable($this->_getDAO("AppraisalsDAO"),$_SESSION['sql_pass_log_data'], array(
                 "viewOnly"  => true
             ));
         }
