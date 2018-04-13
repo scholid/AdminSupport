@@ -1,21 +1,20 @@
 <?php
-
 /*
 install command as webdocs user
 
-wget --no-cache https://raw.githubusercontent.com/khoaofgod/AdminSupport/master/AdminSupport.php -O /var/www/tandem.inhouse-solutions.com/includes/pages/specials/AdminSupport.php
-wget --no-cache https://raw.githubusercontent.com/khoaofgod/AdminSupport/master/blankFile.txt -O /var/www/tandem.inhouse-solutions.com/scripts/internal_user.csv
+wget https://raw.githubusercontent.com/khoaofgod/AdminSupport/master/AdminSupport.php -O /var/www/tandem.inhouse-solutions.com/includes/pages/specials/AdminSupport.php
+wget https://raw.githubusercontent.com/khoaofgod/AdminSupport/master/blankFile.txt -O /var/www/tandem.inhouse-solutions.com/scripts/internal_user.csv
 
-wget --no-cache https://raw.githubusercontent.com/khoaofgod/AdminSupport/master/addUsersToSite.php -O /var/www/tandem.inhouse-solutions.com/scripts/addUsersToSite.php
+wget https://raw.githubusercontent.com/khoaofgod/AdminSupport/master/addUsersToSite.php -O /var/www/tandem.inhouse-solutions.com/scripts/addUsersToSite.php
 
 
  */
 ini_set('include_path','.:../includes/:../includes/libs/:/usr/share/pear/:/var/www/tandem.inhouse-solutions.com/includes/:/var/www/tandem.inhouse-solutions.com/includes/libs/');
 ini_set('display_errors', 1);
 ini_set('display_startup_errors', 1);
-ini_set('max_execution_time', 3600);
+ini_set('max_execution_time', 600);
 
-set_time_limit(3600);
+set_time_limit(1800);
 ini_set('memory_limit', -1);
 error_reporting(E_ALL & ~E_WARNING & ~E_NOTICE);
 
@@ -39,10 +38,6 @@ require_once('classes/Transmitter.php');
 require_once('modules/remote/admin/companies/ManageBrokerCompany.php');
 require_once ('classes/AmcProductPricingRules.php');
 require_once("classes/invoices/PayerInvoiceFactory.php");
-require_once("classes/Configs/LocationConfig.php");
-require_once('classes/Wallet.php');
-require_once('modules/remote/admin/locations/ManageInternalLocation.php');
-require_once('classes/GoogleSettings.php');
 
 @include('Net/SFTP.php');
 
@@ -175,21 +170,6 @@ class specials_AdminSupport extends specials_baseSpecials
 		$pricing->countLines($file_name);
     }
 
-    public function globalUpdateConfig() {
-        foreach ($this->getAllSchema() as $schema=>$connection) {
-             $sql = "SELECT COUNT(*) as total FROM config_values where config_key_id=626 and party_id=1 ";
-             $total = $this->sqlSchema($schema,$sql)->fetchObject()->TOTAL;
-             echo "{$schema} = {$total} ";
-             if($total == 0) {
-                $config_value = '["2","1"]';
-                $sql = "INSERT INTO config_values (config_key_id, config_value, party_id) VALUES(626,?,1)";
-                $this->sqlSchema($schema,$sql, array($config_value));
-                echo " UPDATED ";
-             }
-             echo "<br>";
-        }
-    }
-
     public function fixConditionEmail() {
 
 
@@ -242,168 +222,6 @@ class specials_AdminSupport extends specials_baseSpecials
 
     protected function isCmd() {
     	return !empty($this->argv);
-    }
-
-    public function menu_tools_google_check_google_api() {
-        $this->buildForm(array(
-            $this->buildInput("appraisal_id","Appraisal ID","text"),
-            $this->buildInput("address_custom","OR Custom Address","text"),
-        ));
-        $appraisal_id = $this->getValue("appraisal_id");
-        $address_custom = $this->getValue("address_custom");
-        if(!empty($appraisal_id)) {
-            $std = new stdClass();
-            $std->APPRAISAL_ID = $appraisal_id;
-            $appraisal = $this->_getDAO("AppraisalsDAO")->get($std);
-            $address_custom = "{$appraisal->ZIPCODE}";
-        }
-        if(!empty($address_custom)) {
-            echo "<pre>";
-            print_r($this->GetGeo($address_custom,"", true));
-            echo "</pre>";
-        }
-    }
-
-    public function GetGeo($address, $input_token = "", $debug = false) {
-        $ret = null;
-        $Transmitter = new Transmitter();
-        $returnValue = null;
-        $address = urlencode($address);
-        $google = GoogleSettings::get();
-        // from @abdur as 12/21 , 2500 request per day
-        $backup_token = 'AIzaSyAsWu9i84tiquv04pGDXPumQLSIhbJxTEA';
-        // from @abdur as jan/2018 , 25,000 request per day
-        $default_token = $google['token'];
-
-        $geo_token = $input_token!= "" ? $input_token : $default_token;
-        $url = "https://maps.google.com/maps/api/geocode/json?address=$address&sensor=false&key={$geo_token}";
-        $geo_failed = true;
-        try{
-            $ret = $Transmitter->FetchUrl($url);
-        } catch(NetworkingException $ne){
-        }
-
-        if(200 == $ret['HTTP_CODE']){
-            $json = json_decode($ret['RETURN']);
-            if($debug) {
-                print_r($json);
-            }
-
-            switch($json->status){
-                case 'OK':
-                case 'ZERO_RESULTS':
-                    if('OK' == $json->status){
-                        $returnValue->LATITUDE = $json->results[0]->geometry->location->lat;
-                        $returnValue->LONGITUDE = $json->results[0]->geometry->location->lng;
-                        foreach ($json->results[0]->address_components as $address_component)
-                        {
-                            if(in_array('administrative_area_level_2',$address_component->types))
-                            {
-                                $returnValue->COUNTY = $address_component->long_name;
-                            }
-                        }
-
-                        if(!empty($returnValue->LATITUDE) && $returnValue->LATITUDE != 'NaN') {
-                            $geo_failed = false;
-                        }
-
-                    } else {
-                        $returnValue->LATITUDE = 'NaN';
-                        $returnValue->LONGITUDE = 'NaN';
-                        $returnValue->COUNTY = null;
-                    }
-                    break;
-                default:
-                    //mark error?  try again later?
-                    break;
-            }
-        }
-
-        if($geo_failed && $input_token == "") {
-            // try 1 more time with backup token from google.ini
-            return $this->GetGeo($address, $backup_token, $debug);
-        }
-
-        return $returnValue;
-    }
-
-    public function menu_appraisals_status_change_to_any_status() {
-        $appraisal_id = $this->getValue("appraisal_id","");
-        $status_type_id = $this->getValue("status_type_id","");
-        $action_id = $this->getValue("action_id","");
-        $this->buildForm(array(
-            $this->buildInput("appraisal_id","Appraisal ID","text"),
-            $this->buildInput("action_id","Action ID","select",$this->buildSelectOptionFromDAO("WorkflowActionsDAO")),
-            $this->buildInput("status_type_id","Status Type ID", "select", $this->buildSelectOptionFromDAO("StatusTypesDAO"))
-        ), array(
-            "confirm"   => true
-        ));
-
-        if($appraisal_id > 0 && $status_type_id > 0 && $action_id > 0) {
-            $current_status = $this->getAppraisalCurrentStatus($appraisal_id);
-            $workflow_id = $this->getAppraisalObj($appraisal_id)->WORKFLOW_ID;
-            echo "Status :$current_status - Workflow: $workflow_id ";
-            if($current_status!=$status_type_id) {
-                $sql = "DELETE FROM workflow_role_actions
-                        WHERE role_type_id=1 AND action_id=".$action_id."
-                        AND workflow_id={$workflow_id}
-                        AND start_status={$current_status}
-                        AND end_status=".$status_type_id."
-                        AND workflow_condition_order=-100    ";
-
-                $this->query($sql);
-
-                $obj = new stdClass();
-                $obj->ROLE_TYPE_ID=1;
-                $obj->ACTION_ID=$action_id;
-                $obj->WORKFLOW_ID = $workflow_id;
-                $obj->START_STATUS = $current_status;
-                $obj->END_STATUS = $status_type_id;
-                $obj->WORKFLOW_CONDITION_ORDER=-100;
-
-                $this->_getDAO("WorkflowRoleActionsDAO")->Create($obj);
-                Workflow::action($this->getCurrentUser(), $appraisal_id, $action_id);
-
-                $this->query($sql);
-            }
-
-            if($this->getAppraisalCurrentStatus($appraisal_id) != $status_type_id) {
-                echo " ==> Can not move to {$status_type_id} ";
-            } else {
-                echo "=> Order moved to {$status_type_id}";
-            }
-        }
-
-    }
-
-    // @todo
-    public function menu_appraisals_report_find_appraisals_by_products() {
-    	$sql = "select A.appraisal_id, ASH.status_date , A.street_number, A.street_name , A.city, A.state, A.zipcode, A.county, A.borrower1_first_name, A.borrower1_last_name, A.appraisal_appointment_time from 
-				msiretail.appraisals_products AS AP 
-				INNER JOIN msiretail.appraisals as A ON AP.appraisal_id=A.appraisal_id
-				INNER JOIN msiretail.appraisal_status_history as ASH ON A.appraisal_id = ASH.appraisal_id AND ASH.status_type_id=0 AND ASH.status_date >= '2017-01-01' AND ASH.status_date <= '2017-07-31'
-				where AP.appraisal_product_id IN (14)
-				and AP.is_deleted_flag IS FALSE
-				order by ASH.status_date ASC";
-    }
-
-    // @todo
-    public function menu_appraisals_appraiser_check_appraiser_address() {
-    	$appraisal_id = $this->getValue("appraisal_id","");
-	    $contact_id = $this->getValue("contact_id","");
-	    $company_id = $this->getValue("company_id","");
-    	$this->buildForm(array(
-    		$this->buildInput("appraisal_id","Appraisal ID","text", $appraisal_id),
-		    $this->buildInput("contact_id","OR Contact ID","text", $contact_id),
-		    $this->buildInput("company_id","OR Company ID","text", $company_id),
-	    ));
-    	if(!empty($appraisal_id)) {
-			$sql = "SELECT EAR.* , ER.engine_type_id, ER.completed_dt,  FROM
-					engine_request_appraisal AS ERA
-					JOIN  engine_request AS ER ON EAR.engine_request_id = EAR.engine_request_id
-					JOIN engine_event AS EE ON EE.engine_request_id = EAR.engine_request_id
-					";
-	    }
     }
 
     public function importManageLocationPricing() {
@@ -733,363 +551,71 @@ class specials_AdminSupport extends specials_baseSpecials
 
     }
 
-    public function needUpdateSystem() {
-        $options = SystemSettings::get();
-        $prod = $options['General']['Environment'] == 'prod';
-        $md1 = $this->cacheGet("md1");
-        if(empty($md1)) {
-            $md1 = md5(trim(file_get_contents("https://raw.githubusercontent.com/khoaofgod/AdminSupport/master/AdminSupport.php?".rand(1,9999))));
-            $this->cacheSet("md1",$md1);
-        }
-        $md2 = $this->cacheGet("md2");
-        if(empty($md2)) {
-            $md2 = md5(trim(file_get_contents(__DIR__."/AdminSupport.php")));
-            $this->cacheSet("md2",$md2);
-        }
-
-        if($md1!==$md2 && $prod) {
-            echo " <br><br><h4> Need Update Support Tools - <A href='?action=menu_tools_delpoyment_update_support_tools'>Click Here</A></h4> <br><br>";
-            echo "{$md1} VS {$md2}";
-        }
-    }
-
-    public function getConfigSchemaValue($schema,$config_name, $party_id ) {
-        $this->getAllSchema();
-        require_once('daos/extended/PartyHierarchyDAO.php');
-        $connexion = $this->connections[$schema]['connection'];
-        $PartyHierarchyDAO = new PartyHierarchyDAO($connexion);
-        $party_ids = $PartyHierarchyDAO->GetHierarchy($party_id);
-        $party_ids[] = 1;
-
-        $sql = 'SELECT CV.* FROM config_keys AS CK
-                INNER JOIN config_values AS CV ON CK.config_key_id = CV.config_key_id
-                WHERE CK.config_key_short_name=? ';
-        $rows = $this->sqlSchema($schema, $sql, array($config_name))->getRows();
-        $res = null;
-
-        foreach($party_ids as $party_id) {
-            foreach($rows as $row) {
-                if($party_id == $row['party_id'] && $row['config_value']!='' && empty($res)) {
-                    $res = $row['config_value'];
-                }
-            }
-        }
-        return $res;
-    }
-
-    public function testGetConfigSchema() {
-        $schemas = $this->getAllSchema();
-        foreach($schemas as $schema=>$connection) {
-            echo $schema . "<br>";
-            echo "<pre>";
-            $v = $this->getConfigSchemaValue($schema,"SEND_BORROWER_APPRAISAL_REPORT",1267);
-            echo $v;
-            echo "</pre>";
-            echo "<br>";
-
-        }
-    }
-
-    public function quickBuild($title, $dao,$where = "", $data=array(), $options = array()) {
-        $dao = $this->_getDAO($dao);
-        if(!empty($where)) {
-            $where = " WHERE {$where} ";
-        }
-        if(!empty($dao->pk)) {
-            $order_by = "order by {$dao->pk} DESC";
-        }
-        $sql = "SELECT * FROM {$dao->table} {$where} {$order_by} ";
-
-        if(!empty($title)) {
-            echo "<hr><h3>{$title}</h3>";
-        }
-        $datax = $this->query($sql, $data)->GetRows();
-        $this->buildJSTable($dao, $datax, $options);
-
-        return $datax;
-    }
-
-    public function _getAppraisalStatus($appraisal_id) {
-        return $this->quickBuild("Status History","AppraisalStatusHistoryDAO", "appraisal_id=?", array($appraisal_id),
-            array(
-                "hookData" => array(
-                    "updated_flag"  => array(
-                        "f" => "f = current"
-                    ),
-                    "status_type_id" => array(
-                        "table"  =>  "status_types",
-                        "column"    => "status_type_id",
-                        "display"   => "status_name"
-                    ),
-                    "updater_id"    =>  array(
-                        "table" => "users",
-                        "column"    => "user_id",
-                        "display"   => "user_name"
-                    )
-                )
-            ));
-    }
-    public function menu_appraisals_order_pull_order() {
-        $appraisal_id = $this->getValue("appraisal_id");
-        $this->buildForm(array(
-            $this->buildInput("appraisal_id","Appraisal ID","text",$appraisal_id)
-        ));
-
-        if(!empty($appraisal_id)) {
-            $appraisals = $this->quickBuild("Appraisals", "AppraisalsDAO", "appraisal_id=?", array($appraisal_id));
-            $this->_getAppraisalStatus($appraisal_id);
-            $holds = $this->quickBuild("Hold Reasons","HoldsDAO", "appraisal_id=?", array($appraisal_id), array(
-                "hookData"  => array(
-                    "hold_type_id" => array(
-                        "table" => "hold_types",
-                        "display"   => array("hold_type_desc","comment_required_flag")
-                    )
-                )
-            ));
-            $this->getAppraisalProducts($appraisal_id);
-
-            $requested_by = $this->quickBuild("Requested By","UsersDAO", "user_id=?", array($appraisals[0]['requested_by']));
-            $this->quickBuild(null,"ContactsDAO", "contact_id=?", array($requested_by[0]['contact_id']));
-            $this->quickBuild("Appraisers","ContactsDAO", "contact_id=?", array($appraisals[0]['appraiser_id']));
-            $this->quickBuild(null,"UsersDAO", "contact_id=?", array($appraisals[0]['appraiser_id']));
-            $this->quickBuild("AMC","PartiesDAO", "party_id=?", array($appraisals[0]['amc_id']));
-            $this->quickBuild("Payment Processing Log","PaymentProcessingResultLogDAO", "appraisal_id=?", array($appraisal_id));
-            $this->quickBuild("Wallet","WalletPartialPaymentInformationDAO", "appraisal_id=?", array($appraisal_id));
-            $this->quickBuild("Partial Payment","WalletPartialPaymentInformationDAO", "appraisal_id=?", array($appraisal_id));
-            $this->_getAppraisalWorkFlowHistory($appraisal_id);
-            $this->_getAppraisalEmail($appraisal_id, "");
-        }
-    }
-
-    private function _doWeSendBorrowerReport($schema, $appraisal)
-    {
-        $appraisal_id = $appraisal->APPRAISAL_ID;
-        $q = 'select count(appraisal_status_history_id) as status_count 
-		        from appraisal_status_history 
-		       where status_type_id=? and appraisal_id=?';
-
-        $obj = $this->sqlSchema($schema, $q,array(AppraisalStatus::COMPLETED,$appraisal_id))->FetchNextObject();
-
-        if($obj->STATUS_COUNT > 1 && $this->getConfigSchemaValue($schema,'NO_RESEND_BO_APP_REPORT', $appraisal->PARTY_ID) == 't') {
-            return true;
-        }
-
-
-        $sendBorrowerReport = $this->getConfigSchemaValue($schema,'SEND_BORROWER_APPRAISAL_REPORT', $appraisal->PARTY_ID) == 't';
-        $approveFinalReport = $this->getConfigSchemaValue($schema,'APPROVE_FINAL_APPRAISAL_REPORT', $appraisal->PARTY_ID) == 't';
-
-        //Check is AMC_ID matches any of the config IDs
-        $OverRideBorrowerConfigbyPartyID = $this->getConfigSchemaValue($schema, 'SEND_BORROWER_APP_RPT_BY_PARTY_ID', $appraisal->PARTY_ID) == 't';
-
-        if (($sendBorrowerReport && !$approveFinalReport) || $OverRideBorrowerConfigbyPartyID) {
-            return true;
-        }
-        return false;
-    }
-
-
-    public function _needToGenerateCompletedDocs($schema, $appraisal_id) {
-        // Generate the Document if this is the first time reach completed status
-        $q = 'select count(appraisal_status_history_id) as status_count 
-		        from appraisal_status_history 
-		       where status_type_id=? and appraisal_id=?';
-
-        $obj = $this->sqlSchema($schema, $q,array(9,$appraisal_id))->FetchNextObject();
-
-        if($obj->STATUS_COUNT == 1) {
-            return true;
-        }
-
-        // If we completed the order more than once, ONLY proceed if we have a new appraisal report
-        $sql = "
-			SELECT file_id, upload_time
-			FROM file_metadata as fm
-			JOIN
-			(
-				SELECT appraisal_id, status_date
-				FROM appraisal_status_history
-				WHERE appraisal_id = ?
-					AND status_type_id = 9
-					AND updated_flag IS TRUE
-				ORDER BY status_date DESC
-				LIMIT 1
-			) as ash ON (ash.appraisal_id = fm.appraisal_id)
-			WHERE fm.form_type_id = 3
-				AND fm.upload_time > ash.status_date";
-        return count($this->sqlSchema($schema, $sql, array($appraisal_id))->getRows()) > 0;
-    }
-
-    public function format_date_time($time,$format = "m/d/Y") {
-        return @date($format, strtotime($time));
-    }
-
-    public function menu_tools_utils_fix_completed_email_missing() {
-        $schemas = $this->getAllSchema();
-        $my_schemas = array(
-            "all"   => "All schemas"
-        );
-        foreach($schemas as $schema=>$connection) {
-            $my_schemas[$schema] = $schema;
-        }
-        $this->buildForm(array(
-            $this->buildInput("date_time","From Date Time","text"),
-            $this->buildInput("to_date_time","To Date Time","text"),
-            $this->buildInput("appraisal_id","Appraisal ID (optional)","text"),
-            $this->buildInput("search_in_schemas","Schemas (optional)","select", $this->buildSelectOption($my_schemas)),
-            $this->buildInput("actionx","Action","select", $this->buildSelectOption(array(
-                "--"    => "----",
-                "view"  => "View Only",
-                "send"  => "Send Complete Again",
-                "clear" => "Clear Old Events"
-            ))),
-        ), array(
-            "confirm"   => true
-        ));
-        $actionx = $this->getValue("actionx");
-        $date_time = $this->getValue("date_time",@date("Y-m-d H:i:s","yesterday"));
-        $look_appraisal_id = $this->getValue("appraisal_id","");
-        $to_date_time = $this->getValue("to_date_time");
-        $search_in_schemas = $this->getValue("search_in_schemas","all");
-        if($actionx == "clear") {
-            $schemas = $this->getAllSchema();
-            foreach($schemas as $schema=>$connection) {
-                $sql = "DELETE FROM events
-                        WHERE event_id IN (
-                            select E.event_id from 
-                                        events  as E
-                                        LEFT JOIN appraisal_status_updated_jobs AS ASHJ ON E.event_id = ASHJ.event_id
-                                        where
-                                        E.event_type_id=2
-                                        AND event_date > (now() - interval '7 days')
-                                        AND ASHJ.event_id is null              
-                        )";
-                $this->sqlSchema($schema, $sql);
-                echo $schema."<br>";
-            }
-        }
-        else if(in_array($actionx , array("send","view")) && (!empty($date_time)||(!empty($look_appraisal_id)))) {
-            echo "Check From Time {$date_time}";
-
-            foreach($schemas as $schema=>$connection) {
-                if($schema == "schoolsfirstfcu" || $schema=="inhousesolutions1"
-                    || ($search_in_schemas!= "all" && $schema!=$search_in_schemas)
-                    ) {
-                    continue;
-                }
-                echo $schema."<br>";
-                $big_where = 'AND ASH.status_date >= ? ';
-                $big_where_x = array($date_time);
-                if(!empty($look_appraisal_id)) {
-                    $big_where = " AND ASH.appraisal_id=? ";
-                    $big_where_x = array($look_appraisal_id);
-                }
-                elseif(!empty($to_date_time)) {
-                    $big_where.= ' AND ASH.status_date <= ? ';
-                    $big_where_x[] = $to_date_time;
-                }
-
-                $sql = "SELECT Job.*, ASH.*
+    public function fixCompletedEmail() {
+	    $schemas = $this->getAllSchema();
+	    foreach($schemas as $schema=>$connection) {
+		    echo $schema."<br>";
+		    if($schema == "schoolsfirstfcu" || $schema=="inhousesolutions1") {
+		    	continue;
+		    }
+		    $sql = "SELECT * 
 			FROM appraisal_status_history AS ASH
 			LEFT JOIN appraisal_status_updated_jobs AS Job ON (JOB.appraisal_status_history_id = ASH.appraisal_status_history_id )
 			where ASH.updated_flag IS FALSE 
 			AND ASH.status_type_id=9
-			{$big_where}
-			ORDER BY ASH.status_date ASC ";
-                $jobs = $this->sqlSchema($schema,$sql, $big_where_x)->GetRows();
-                if(!empty($look_appraisal_id)) {
-                    echo "<pre>";
-                    print_r($jobs);
-                    echo "</pre>";
-                }
-                foreach($jobs as $job) {
-                    $appraisal_id = $job['appraisal_id'];
-                    if(empty($appraisal_id)) {
-                        continue;
-                    }
-                    echo $appraisal_id." || {$this->format_date_time($job['status_date'])} => ";
-                    $appraisal = $this->sqlSchema($schema, "SELECT * FROM appraisals where appraisal_id= ?", array($appraisal_id))->fetchObject();
-                    $party_id = $appraisal->PARTY_ID;
-                    if($this->getConfigSchemaValue($schema,"SEND_BORROWER_APPRAISAL_REPORT", $party_id) !== "t") {
-                        echo " Site Disabled Send Borrower Report <br>";
-                        continue;
-                    }
-
-
-                    $borrower_email = $appraisal->BORROWER1_EMAIL;
-                    if($borrower_email!="") {
-                        echo " FOUND {$borrower_email} ";
-                        // locate borrower email
-                        $sql = "SELECT * 
+			AND ASH.status_date > '2017-11-26 18:00:00' 
+			ORDER BY Job.appraisal_id DESC ";
+		    $jobs = $this->sqlSchema($schema,$sql)->GetRows();
+		    foreach($jobs as $job) {
+			    $appraisal_id = $job['appraisal_id'];
+			    echo $appraisal_id." => ";
+			    $appraisal = $this->sqlSchema($schema, "SELECT * FROM appraisals where appraisal_id= ?", array($appraisal_id))->fetchObject();
+			    $borrower_email = $appraisal->BORROWER1_EMAIL;
+			    if($borrower_email!="") {
+			    	echo " FOUND {$borrower_email} ";
+				    // locate borrower email
+				    $sql = "SELECT * 
 					FROM notification_jobs_appraisals JA 
 					INNER JOIN notification_jobs AS NJ ON JA.notification_job_id=NJ.notification_job_id 
-					WHERE JA.appraisal_id= ? AND NJ.message_to=? AND 
-					((NJ.body like '%Completed%' and NJ.subject like 'Status Updated%') OR (NJ.subject like 'Download report for%'))
+					WHERE JA.appraisal_id= ? AND NJ.message_to=? AND NJ.body like '%Completed%' and NJ.subject like 'Status Updated%' 
 					AND (NJ.last_attempted_timestamp >= ? OR NJ.target_date >= ?)
-					ORDER BY JA.notification_job_id DESC
+					
 					LIMIT 1";
-                        $email = $this->sqlSchema($schema, $sql, array($appraisal_id, $borrower_email, $job['last_attempted_timestamp'], $job['last_attempted_timestamp']))->fetchObject();
-                        $should_send = false;
+				    $email = $this->sqlSchema($schema, $sql, array($appraisal_id, $borrower_email, $job['last_attempted_timestamp'], $job['last_attempted_timestamp']))->fetchObject();
+				    $should_send = false;
 
-                        if($email->NOTIFICATION_JOB_ID) {
-                            echo " SENT ALREADY {$this->format_date_time($email->LAST_ATTEMPTED_TIMESTAMP)}  ";
-                            // locate conditions
-                            if(substr($email->SUBJECT,0,strlen('Download report for')) == 'Download report for') {
-                                echo " || MANUALLY SENT || ";
-                            } else {
-                                echo " || CNX SENT || ";
-                            }
-                        }
-                        elseif($this->_needToGenerateCompletedDocs($schema,$appraisal_id) && $this->_doWeSendBorrowerReport($schema, $appraisal)) {
-                            echo " NOT SEND ";
-                            $should_send = true;
-                        } else {
-                            echo " NO NEED TO SEND ";
-                        }
+				    if($email->NOTIFICATION_JOB_ID) {
+				    	echo " SENT ALREADY {$email->LAST_ATTEMPTED_TIMESTAMP} / {$email->TARGET_DATE} ";
+						// locate conditions
+				    } else {
+					    echo " NOT SEND ";
+					    $should_send = true;
+				    }
 
-                        if($should_send == true && $actionx == "send") {
-                            echo " <b>NOT SENT YET</b> -> Updated Null for Job {$job['appraisal_status_updated_job_id']} ";
-                            $sql = "SELECT * FROM appraisal_status_updated_jobs WHERE appraisal_id=? AND appraisal_status_updated_job_id=? ";
-                            $current = $this->sqlSchema($schema, $sql, array($appraisal_id,$job['appraisal_status_updated_job_id']))->fetchObject();
-                            if(empty($job['appraisal_status_updated_job_id'])) {
-                                echo " || Missing Job ";
-                                $event_data = '<?xml version="1.0" encoding="UTF-8"?>
-<Messages><Message><Appraisal id="'.$appraisal_id.'"><Status id="'.$job['appraisal_status_history_id'].'">9</Status></Appraisal></Message></Messages>';
-                                $sql = "INSERT INTO events (EVENT_TYPE_ID, EVENT_DATE, EVENT_DATA) VALUES(2,now(),?)";
-                                $this->sqlSchema($schema, $sql, array($event_data));
+				    if($should_send == true) {
+					    echo " NOT SENT YET -> Updated Null for Job {$job['appraisal_status_updated_job_id']} ";
+					    $sql = "SELECT * FROM appraisal_status_updated_jobs WHERE appraisal_id=? AND appraisal_status_updated_job_id=? ";
+					    $current = $this->sqlSchema($schema, $sql, array($appraisal_id,$job['appraisal_status_updated_job_id']))->fetchObject();
+					    echo $current->JOB_COMPLETED_FLAG;
+					    if(is_null($current->JOB_COMPLETED_FLAG) && $current->JOB_COMPLETED_FLAG!=true) {
+						    echo "<i> Already NULLED </i> ";
+					    } else {
+						    // doing update
+						    $sql = "UPDATE appraisal_status_updated_jobs set job_completed_flag=null WHERE appraisal_id=? AND appraisal_status_updated_job_id=? ";
+						    $this->sqlSchema($schema, $sql, array($appraisal_id,$job['appraisal_status_updated_job_id']));
+						    echo "<b> DONE </b>";
+					    }
+				    }
 
-                                $sql = "SELECT event_id FROM events order by event_id DESC LIMIT 1 ";
-                                $event_obj = $this->sqlSchema($schema, $sql)->fetchObject();
-                                echo " EVENT Created {$event_obj->EVENT_ID} ";
-                            }  else {
-                                echo $current->JOB_COMPLETED_FLAG;
-                                if(is_null($current->JOB_COMPLETED_FLAG) && $current->JOB_COMPLETED_FLAG!=true) {
-                                    echo "<i> Already NULLED </i> ";
-                                } else {
-                                    // doing update
-                                    $sql = "UPDATE appraisal_status_updated_jobs set job_completed_flag=null WHERE appraisal_id=? AND appraisal_status_updated_job_id=? ";
-                                    $this->sqlSchema($schema, $sql, array($appraisal_id,$job['appraisal_status_updated_job_id']));
-                                    echo "<b> DONE </b>";
-                                }
-                            }
-
-                        } elseif ($should_send == true) {
-                            if(empty($job['appraisal_status_updated_job_id'])) {
-                                echo " || EMPTY EVENT || ";
-                            }
-                            echo " <b>NOT SENT YET Job</b> {$job['appraisal_status_updated_job_id']} ";
-                        }
-
-                    } else {
-                        echo " NO BORROWER EMAIL ";
-                    }
-                    echo "<br>";
-                }
+			    } else {
+			    	echo " NO BORROWER EMAIL ";
+			    }
+			    echo "<br>";
+		    }
 
 
 
-            }
-        }
-
+	    }
     }
 
     public function deploy() {
@@ -1165,63 +691,6 @@ class specials_AdminSupport extends specials_baseSpecials
 		}
     }
 
-    var $cache = array();
-    public function cacheSet($key, $value, $time = 3600) {
-        $_SESSION['ADMINSUPPORT'][$key] = array(
-            "value" => $value,
-            "time"  => @date("U") + $time
-        );
-        $this->cacheWrite();
-    }
-
-    public function cacheGet($key) {
-        $this->cacheRead();
-        $cache = isset($_SESSION['ADMINSUPPORT'][$key]) ? $_SESSION['ADMINSUPPORT'][$key] : null;
-        if(empty($cache)) {
-            return null;
-        }
-        if($cache['time'] <= @date("U")) {
-            $this->cacheDelete($key);
-            return null;
-        }
-        return $cache['value'];
-    }
-
-    public function cacheDelete($key) {
-        unset($_SESSION['ADMINSUPPORT'][$key]);
-        $this->cacheWrite();
-    }
-
-    public function cacheWrite() {
-        // write to file;
-    }
-
-    public function cacheRead() {
-        if(!isset($_SESSION['ADMINSUPPORT'])) {
-            $_SESSION['ADMINSUPPORT'] = array();
-        }
-    }
-
-
-
-    public function getTablesFromSchema($json = true) {
-        $OPTIONS = SystemSettings::get();
-        $key = "table_list";
-        $x = $this->cacheGet($key);
-        if(empty($x)) {
-            $sql = "SELECT table_name FROM information_schema.tables WHERE table_schema=? OR table_schema=? OR table_schema='commondata' 
-                GROUP BY table_name
-                order by table_name ASC";
-            $x = $this->query($sql, array($OPTIONS['PG_SQL']['DBNAME'], $OPTIONS['PG_SQL']['USER']))->GetRows();
-            $this->cacheSet($key,$x);
-        }
-
-        if($json == true) {
-            echo json_encode($x);
-        }
-        return $x;
-    }
-
 
 
 	public function menu_appraisals_invoices_generate_vendor_invoice() {
@@ -1231,7 +700,7 @@ class specials_AdminSupport extends specials_baseSpecials
 		$appraisal_id = $this->getValue("appraisal_id","");
 		if(!empty($appraisal_id)) {
 			echo " DONE , please visit Appraisal Detail and refresh, get the file under File Section.";
-			$pdf = PayerInvoiceFactory::Create($appraisal_id, FormTypes::VENDOR_INVOICE, true);
+			$pdf = PayerInvoiceFactory::Create($appraisal_id, FormTypes::VENDOR_INVOICE);
 			@$pdf->Output('vendor_invoice_' . $appraisal_id . '_' . date('Ymdhis') . '.pdf', 'D');
 		}
 	}
@@ -1244,13 +713,12 @@ class specials_AdminSupport extends specials_baseSpecials
 	    $original_body = $this->getValue("email_body","");
 
     	$this->buildForm(array(
-    		$this->buildInput("username_list","Username List(,) or Line by Line.","textarea",$username_list),
-		    $this->buildInput("appraisal_id","Appraisal ID (optional)","text",$appraisal_id),
+    		$this->buildInput("username_list","Username List(,)","textarea",$username_list),
+		    $this->buildInput("appraisal_id","Appraisal ID","text",$appraisal_id),
 		    $this->buildInput("subject", "Subject","text",$original_subject),
 		    $this->buildInput("send_from", "Send From","text", $send_from),
 			$this->buildInput("email_body", "Email Body","textarea", $original_body)
 	    ));
-    	echo "Email Body is HTML code. tags allowed: [[first_name]] [[last_name]] [[user_name]], before sending out email, try with ur username for testing first.";
 
     	if($username_list!="" && $original_subject!="" && $original_body!="" && $send_from!="") {
     		$username_list = explode("\n",$username_list);
@@ -1431,106 +899,6 @@ class specials_AdminSupport extends specials_baseSpecials
 	    return $Generic->Execute($sql,$data);
     }
 
-    public function menu_workqueues_queue_workqueue_label() {
-        $sql = "SELECT L.label_id, L.label_name, L.conditions_operator, L.conditions_logic
-          FROM labels  AS L Where enabled_flag = true ";
-
-        $labels = $this->query($sql)->getRows();
-        foreach($labels as $i=>$label) {
-            $label_id = $label['label_id'];
-            $sql = "SELECT LC.label_condition_id, 
-	                LF.label_field_name, 
-	                LC.label_field_id ,
-	                O.operator, LC.field_values_obj , CK.config_key_name as enabled_by_config, 
-	                CK2.config_key_name as eabled_by_role_config
-	              FROM  label_conditions AS LC 
-                    LEFT JOIN label_fields AS LF ON LF.label_field_id = LC.label_field_id
-                    LEFT JOIN config_keys aS CK on CK.config_key_id = LC.enable_config 
-                    LEFT JOIN config_keys aS CK2 on CK2.config_key_id = LC.role_config 
-                    LEFT JOIN operators as O ON O.operator_id = LC.operator_id
-                    WHERE LC.label_id=?
-                    ";
-            $conditions = $this->query($sql,array($label_id))->GetRows();
-            $label['enabled_by_config'] = "";
-            $label['eabled_by_role_config'] = "";
-            foreach ($conditions as $condition) {
-                $condition_id = $condition['label_condition_id'];
-                $condition['field_values_obj_text'] = $condition['field_values_obj'];
-                switch($condition['label_field_name']) {
-                    case "status_type_id":
-                        $condition['field_values_obj_text'] = "";
-                        $status = json_decode($condition['field_values_obj'],true);
-                        if(!is_array($status)) {
-                            $status = array($status);
-                        }
-
-                        foreach($status as $t) {
-                            $status_name = $this->_getDAO("StatusTypesDAO")->getStatusNameByID(trim($t));
-                            $condition['field_values_obj_text'].= ", {$status_name}[{$t}]";
-                        }
-                        $condition['field_values_obj_text'] = "(".trim(ltrim($condition['field_values_obj_text'],",")).")";
-                        break;
-                }
-                $c = " {$condition['label_field_name']} {$condition['operator']} {$condition['field_values_obj_text']} ";
-
-                if(!empty($condition['enabled_by_config'])) {
-                    $label['enabled_by_config'] .= ", ".$condition['enabled_by_config'];
-                }
-                if(!empty($condition['eabled_by_role_config'])) {
-                    $label['eabled_by_role_config'] .= ", " . $condition['eabled_by_role_config'];
-                }
-                switch ($label['conditions_operator']) {
-                    case "MIX":
-                        $label['conditions_logic'] = str_replace("::{$condition_id}::", $c,trim($label['conditions_logic']) );
-                        $substr = 0;
-                        break;
-                    case "OR":
-                        $label['conditions_logic'] .= "OR ".$c;
-                        $substr = 2;
-                        break;
-                    case "AND":
-                    default:
-                        $label['conditions_logic'] .= "AND ".$c;
-                        $substr = 3;
-                        break;
-                }
-            }
-            $label['enabled_by_config'] = trim(ltrim($label['enabled_by_config'],","));
-            $label['eabled_by_role_config'] = trim(ltrim($label['eabled_by_role_config'],","));
-            $label['conditions_logic'] = substr($label['conditions_logic'], $substr);
-            $label['conditions_operator'] = "--REMOVE--";
-
-            // get roles
-            $sql = "SELECT * FROM label_roles as LR 
-                    LEFT JOIN commondata.role_types as RT ON LR.role_id = RT.role_type_id
-                    WHERE LR.label_id=? ";
-            $roles = $this->query($sql, array($label_id))->getRows();
-            $label['roles'] = "";
-            foreach($roles as $role) {
-                if(!empty($role['role_name'])) {
-                    $label['roles'].= ", ".$role['role_name'];
-                }
-            }
-            $label['roles'] = trim(ltrim($label['roles'],","));
-            $labels[$i] = $this->rebuildArray($label);
-
-        }
-
-        $this->buildJSTable($this->_getDAO("LabelsDAO"), $labels, array(
-            "viewOnly" => true
-        ));
-    }
-
-    public function rebuildArray($array) {
-        $res = array();
-        foreach($array as $key=>$value) {
-            if(!in_array($value, array("--REMOVE--"))) {
-                $res[$key] = $value;
-            }
-        }
-        return $res;
-    }
-
     public function mass_create_note() {
         $this->buildForm(array(
             $this->buildInput("appraisal_ids","Appraisals IDs","textarea"),
@@ -1611,7 +979,6 @@ class specials_AdminSupport extends specials_baseSpecials
         return $string;
     }
 
-    public $geo_reset_cache = array();
     public function _addAppraiserGEO($data) {
         $username = $this->getValue("username","",$data);
         echo "{$username} => ";
@@ -1619,20 +986,15 @@ class specials_AdminSupport extends specials_baseSpecials
             $user = $this->_getDAO("UsersDAO")->Execute("SELECT * FROM users where user_name=? ", array($username))->FetchObject();
             $contact_id = $user->CONTACT_ID;
 
-	        $address1 = $this->getValue(array("address1","address"),"",$data);
+	        $address1 = $this->getValue("address1","",$data);
 	        $address2 = $this->getValue("address2","",$data);
 	        $city = $this->getValue("city","",$data);
 	        $state = $this->getValue("state","",$data);
 	        $zipcode = $this->getValue("zipcode","",$data);
 	        $geo_radius = $this->getValue("geo_radius","",$data);
-	        $county_name = $this->getValue(array("county_name","county"),"",$data);
+	        $county_name = $this->getValue("county_name","",$data);
 	        $geo_type = $this->getValue("geo_type","",$data);
-	        $reset_geo = $this->getValue("reset_geo","f",$data);
-            if($this->isTrue($reset_geo) && !empty($contact_id) && !isset($this->geo_reset_cache[$contact_id])) {
-                $this->geo_reset_cache[$contact_id] = true;
-                $sql = "DELETE FROM contact_addresses WHERE contact_id=?  ";
-                $this->query($sql, array($contact_id));
-            }
+
             if (!empty($contact_id) && $geo_type!="") {
             	$sql = "DELETE FROM contact_addresses WHERE contact_id=? AND geo_type=? AND state=? AND county_name=? AND city=? AND zipcode=? AND address1=? ";
             	$this->query($sql, array(
@@ -1879,22 +1241,6 @@ class specials_AdminSupport extends specials_baseSpecials
     		$fields[$key] = $value;
 	    }
     	return $fields;
-    }
-
-    public function menu_tools_api_get_amc_intergated() {
-        $schemas = $this->getAllSchema();
-
-        $res = array();
-        foreach($schemas as $schema=>$connection) {
-            $sql = "select '$schema' as schema_name, P.party_name, W.* from web_services_users as W
-                  INNER JOIN parties as P ON P.party_id = W.party_id";
-            $res = array_merge($res, $this->sqlSchema($schema,$sql)->GetRows());
-        }
-        $this->buildJSTable(null,$res, array(
-            "viewOnly"  => true,
-            "excel" => true
-        ));
-
     }
 
     public function getFieldsHeader($fields = array()) {
@@ -2157,14 +1503,14 @@ class specials_AdminSupport extends specials_baseSpecials
 	        $r['send_borrower_appraisal_report'] = $this->getValue("send_borrower_appraisal_report","", $data);
 
 
-            $r['class'] = trim($r['class']);
+
             if($r['class'] == "") {
                 echo " NO CLASS <br>";
                 return ;
             } else {
                 echo $r['class']." => ";
             }
-	        $class = trim("Manage".preg_replace("/[^a-zA-Z0-9]+/","",$r['class']));
+	        $class = "Manage".$r['class'];
 	        $Appraiser = new $class();
 	        $first_name = $r['first_name'];
 	        $last_name = $r['last_name'];
@@ -2578,7 +1924,7 @@ class specials_AdminSupport extends specials_baseSpecials
 	                }
 
 	                if($r['locations']!="") {
-	                    $location_ids = $this->getPartyIDsByLocation($r['locations'],",");
+	                    $location_ids = $this->getPartyIDsByLocation($r['locations'],"||");
 
 		                $p1 = json_encode(array(
 			                "contact_id"    => $contact_id,
@@ -2724,16 +2070,11 @@ class specials_AdminSupport extends specials_baseSpecials
      * @param string $sep
      * @return array
      */
-    public function getPartyIDsByLocation($locations, $sep = ",") {
+    public function getPartyIDsByLocation($locations, $sep = "||") {
         $locations = explode($sep, $locations);
         $ids = array();
         foreach($locations as $location_name) {
-            if(is_numeric($location_name)) {
-                $id = $location_name;
-            } else {
-                $id = $this->getPartyIdByLocation($location_name);
-            }
-
+            $id = $this->getPartyIdByLocation($location_name);
             if(!empty($id)) {
                 $ids[] = $id;
             }
@@ -2909,21 +2250,6 @@ class specials_AdminSupport extends specials_baseSpecials
             $sql = "SELECT COUNT(*) as total FROM commondata.cronjobs WHERE enabled_flag IS NOT TRUE OR notification_flag IS NOT FALSE ";
             return $this->query($sql)->fetchObject()->TOTAL;
         }
-
-        $this->buildForm(array(
-            $this->buildInput("actionx","Options","select", $this->buildSelectOption(array(
-                "---"   => "Nothing",
-                "clear" => "Clear table cronjob_exceptions"
-            )))
-        ), array(
-            "confirm"   => true
-        ));
-        $actionx = $this->getValue("actionx");
-        if($actionx === "clear") {
-            $sql = "DELETE FROM commondata.cronjob_exceptions ";
-            $this->query($sql);
-        }
-        
         $sql = "SELECT * FROM commondata.cronjob_exceptions ORDER BY cronjob_exception_id DESC LIMIT 1";
         $this->buildJSTable($this->_getDAO("CronjobsDAO"), $this->query($sql)->GetRows(), array(
             "viewOnly"  => true
@@ -2933,98 +2259,6 @@ class specials_AdminSupport extends specials_baseSpecials
         $this->buildJSTable($this->_getDAO("CronjobsDAO"), $this->query($sql)->getRows());
 
     }
-
-	public function menu_tools_utils_check_conditions_function () {
-    	$appraisal_id = $this->getValue("appraisal_id","");
-    	$this->buildForm(array(
-    		$this->buildInput("appraisal_id","Appraisal ID","text", $appraisal_id)
-	    ));
-    	if(!empty($appraisal_id)) {
-    		$this->allConditionsAreCancelledOrSatisfiedWithoutFileId($appraisal_id);
-	    }
-	}
-
-	function ExecuteDAO($sql, $data = array()) {
-    	return $this->query($sql, $data);
-	}
-
-	public function allConditionsAreCancelledOrSatisfiedWithoutFileId($AppraisalID) {
-		// The method should not affect first completed status
-		if($this->_getDAO("AppraisalStatusHistoryDAO")->TimesAppraisalHadThisStatus($AppraisalID,AppraisalStatus::COMPLETED) <= 1) {
-			echo "There is only 1 completed. Return FALSE";
-			return false;
-		}
-
-		// -- GET the Last Condition Status
-		$sql = "SELECT *
-					FROM appraisal_status_history 
-					WHERE status_type_id = ?
-					AND appraisal_id = ?
-					ORDER BY appraisal_status_history_id DESC
-					LIMIT 1";
-		$last_condition_status = $this->ExecuteDAO($sql, array(AppraisalStatus::CONDITIONED_ORDER,$AppraisalID))->FetchObject();
-		echo "<pre>";
-		print_r($last_condition_status);
-		echo "</pre>";
-		if(!$last_condition_status->APPRAISAL_STATUS_HISTORY_ID) {
-			// never go to condition status again
-			echo "Never go to Condition Status again. Return FALSE";
-			return false;
-		}
-
-		// It went to condition again, so look for the status before the condition status
-		$sql = "SELECT * FROM appraisal_status_history
- 				WHERE appraisal_status_history_id < ".$last_condition_status->APPRAISAL_STATUS_HISTORY_ID."
- 				AND appraisal_id = ?
- 				AND status_type_id NOT IN (10,13,16)
- 				ORDER BY appraisal_status_history_id DESC
-				LIMIT 1
-		";
-		$status_before_condition = $this->ExecuteDAO($sql, array($AppraisalID))->FetchObject();
-		Echo "Status Before Condition:";
-		echo "<pre>";
-		print_r($status_before_condition);
-		echo "</pre>";
-		// look for all added conditions from the status_before_condition -> STATUS_DATE
-		$sql = "SELECT CF.*, C.*
-				FROM conditions  AS C	
-				LEFT JOIN condition_files AS CF ON (C.condition_id = CF.condition_id)
-				WHERE C.create_date >= ?	
-					AND C.appraisal_id = ?				
-				";
-		$rows = $this->ExecuteDAO($sql, array($status_before_condition->STATUS_DATE,$AppraisalID))->GetRows();
-		$total_condition = count($rows);
-		echo "<pre>";
-		print_r($rows);
-		echo "</pre>";
-		if($total_condition == 0) {
-			// no condition to check
-			echo " NO CONDITION TO CHECK - RETURN TRUE";
-			return true;
-		}
-		// start checking
-		$cancelled = 0;
-		$satisfied_without_file = 0;
-		foreach($rows as $condition) {
-			if($condition['is_cancelled_flag'] == "t") {
-				$cancelled++;
-			}
-			else if($condition['is_satisfied_flag'] == "t" && empty($condition['file_id'])) {
-				$satisfied_without_file++;
-			}
-		}
-
-		echo " Cancelled {$cancelled} / Satisfied without file {$satisfied_without_file} = Total {$total_condition} ";
-		if($satisfied_without_file + $cancelled == $total_condition) {
-			// cancelled all/some, and satisfied all/some without file
-			echo " RETURN TRUE ";
-			return true;
-		}
-
-		// conditions are not cancelled all, or all/some conditions are satisfied with a file
-		echo " RETURN FALSE ";
-		return false;
-	}
 
 
 
@@ -3432,21 +2666,6 @@ class specials_AdminSupport extends specials_baseSpecials
 		}
 	}
 
-	public function menu_appraisals_wallet_get_payment_information() {
-        $this->buildForm(array(
-            $this->buildInput("appraisal_id","Appraisal ID","text")
-        ));
-
-        $appraisal_id = $this->getValue("appraisal_id");
-        if($appraisal_id != "") {
-            $wallet = new Wallet();
-            $info = $wallet->getBorrowerWallet($appraisal_id);
-            echo "<pre>";
-            print_r($info);
-            echo "</pre>";
-        }
-    }
-
 
 	public function downloadFile($file = null) {
 		if(empty($file)) {
@@ -3523,12 +2742,7 @@ class specials_AdminSupport extends specials_baseSpecials
         ));
 
         if($appraisal_id !== "") {
-           $this->_getAppraisalWorkFlowHistory($appraisal_id);
-        }
-    }
-
-    protected function _getAppraisalWorkFlowHistory($appraisal_id) {
-        $sql = "SELECT  
+            $sql = "SELECT  
                         WH.workflow_history_id,
                         WA.action_name,
                         WH.action_id,
@@ -3552,16 +2766,17 @@ class specials_AdminSupport extends specials_baseSpecials
                   WHERE appraisal_id=?    
                   ORDER BY WH.workflow_history_id ASC
             ";
-        $this->buildJSTable($this->_getDAO("AppraisalsDAO"), $this->query($sql,array($appraisal_id))->getRows(), array(
-            "viewOnly"  => true
-        ));
+            $this->buildJSTable($this->_getDAO("AppraisalsDAO"), $this->query($sql,array($appraisal_id))->getRows(), array(
+                "viewOnly"  => true
+            ));
+        }
     }
 
     public function get_mapping_type_id($column_name, $table_name = "") {
     	$html = "";
     	switch($column_name) {
 		    case "role_type_id":
-		    	$html = $this->buildSelectOptionFromDAO("RoleTypesDAO", array("0" => "Everyone"));
+		    	$html = $this->buildSelectOptionFromDAO("RoleTypesDAO");
 		    	break;
 		    case "action_id":
 			    $html = $this->buildSelectOptionFromDAO("WorkflowActionsDAO");
@@ -3582,39 +2797,29 @@ class specials_AdminSupport extends specials_baseSpecials
 
     public function getColumnsTable() {
     	$table = $this->getValue("table","");
-    	$cache_key = "getColumnsTable".$table;
-        $html = $this->cacheGet($cache_key);
+		$columns = $this->getColumnsFromTable($table);
+		$html = "";
+	    $form = array();
+		foreach($columns as $c) {
+			if(strpos($c['column_default'],"::regclass" ) !== false) {
+				$default = "auto_key";
+			} else {
+				$default = $c['column_default'];
+			}
 
-        if(empty($html)) {
-            $columns = $this->getColumnsFromTable($table);
-            $html = "";
-            $form = array();
-            $column_names = array();
-            foreach($columns as $c) {
-                $column_names[] = $c['column_name'];
-                if(strpos($c['column_default'],"::regclass" ) !== false) {
-                    $default = "auto_key";
-                } else {
-                    $default = $c['column_default'];
-                }
-
-                $select_data = $this->get_mapping_type_id($c['column_name'], $table);
-                if($select_data!="") {
-                    $type = "select";
-                    $default = $select_data;
-                } else {
-                    $type = "text";
-                }
-                $form[] = $this->buildInput($c['column_name'], $c['column_name'] ." ({$c['data_type']}) ", $type ,$default);
-            }
-            $html = $this->buildForm($form, array("output" => true, "nosubmit" => true));
-            $html = str_replace("form","div", $html);
-            $this->cacheSet($cache_key, $html, 3600*24*3);
-        }
-
+			$select_data = $this->get_mapping_type_id($c['column_name'], $table);
+			if($select_data!="") {
+				$type = "select";
+				$default = $select_data;
+			} else {
+				$type = "text";
+			}
+			$form[] = $this->buildInput($c['column_name'], $c['column_name'] ." ({$c['data_type']}) ", $type ,$default);
+		}
+		$html = $this->buildForm($form, array("output" => true, "nosubmit" => true));
+		$html = str_replace("form","div", $html);
 		echo json_encode(array(
-			"html" => $html,
-            "columns" => $column_names
+			"html" => $html
 		));
     }
 
@@ -3627,7 +2832,7 @@ class specials_AdminSupport extends specials_baseSpecials
         }
         try {
             $this->user = $User;
-            if(in_array($action, array("JSPost","downloadFile","getColumnsTable","getTablesFromSchema"))) {
+            if(in_array($action, array("JSPost","downloadFile","getColumnsTable"))) {
                 call_user_func(array($this, $action));
                 exit;
             }
@@ -3748,10 +2953,8 @@ class specials_AdminSupport extends specials_baseSpecials
         }
         $this->outputJSON(array(
             "update" => 2,
-            "msg"   => "data failed {$table} {$primary_id} - {$primary_key} - {$js_action}",
+            "msg"   => "data failed"
         ));
-
-
     }
     public function h4($text) {
         echo "<div style='text-align: center;'><h4>{$text}</h4></div>";
@@ -3786,31 +2989,19 @@ class specials_AdminSupport extends specials_baseSpecials
         $path = "/var/www/tandem.inhouse-solutions.com/scripts";
         $file_input = $path."/internal_user.csv";
         $script = $path."/addUsersToSite.php";
-        $schemas = $this->getAllSchema();
-        $site_list = array("all" => "all");
-        foreach($schemas as $schema=>$connection) {
-            $site_list[$schema]=$schema;
-        }
+
         $this->buildForm(array(
-            $this->buildInput("username","Username (username)","text"),
-            $this->buildInput("email","Email (email)","text"),
-            $this->buildInput("first_name","First Name (first_name) ","text"),
-            $this->buildInput("last_name","Last Name (last_name)","text"),
-            $this->buildInput("user_type","User Type (user_type , 1= lender, 6 =cx)","text", 1),
-            $this->buildInput("roles","Roles (roles , look up table below )","text", "1, 2"),
-            $this->buildInput("parties","Parties ( parties = 1, or blank for vendor) ","text", "1"),
-            $this->buildInput("office_phone","Office Phone ( office_phone or blank) ","text", ""),
-            $this->buildInput("time_zone","Time Zone (time_zone = -5 or text )","select", $this->buildSelectOption(array(
-                "-9"    =>  "Alaska Standard Time",
-                "-8"    =>  "Pacific Standard Time",
-                "-7"    => "Mountain Standard Time",
-                "-6"    => "Central Standard Time",
-                "-5"    => "Eastern Standard Time",
-            ))),
-            $this->buildInput("site","Site (site = all , or schema name )","select", $this->buildSelectOption($site_list)),
-            $this->buildInput("reset_roles","Reset Roles (reset_roles, t or f)","select", $this->buildSelectOption(array("f"=>"No","t"=>"Yes"))),
-            $this->buildInput("reset_contact","Reset Contact ( reset_contact, t or f)","select", $this->buildSelectOption(array("f"=>"No","t"=>"Yes"))),
-            $this->buildInput("deactivate","Deactivate ( deactivate, t or f )","select", $this->buildSelectOption(array("f"=>"No","t"=>"Yes"))),
+            $this->buildInput("username","Username","text"),
+            $this->buildInput("email","Email","text"),
+            $this->buildInput("first_name","First Name","text"),
+            $this->buildInput("last_name","Last Name","text"),
+            $this->buildInput("user_type","User Type","text", 1),
+            $this->buildInput("roles","Roles","text", "1, 2"),
+            $this->buildInput("parties","Parties","text", "1"),
+            $this->buildInput("site","Sites","text", "all"),
+            $this->buildInput("reset_roles","Reset Roles","select", $this->buildSelectOption(array("f"=>"No","t"=>"Yes"))),
+            $this->buildInput("reset_contact","Reset Contact","select", $this->buildSelectOption(array("f"=>"No","t"=>"Yes"))),
+            $this->buildInput("deactivate","Deactivate","select", $this->buildSelectOption(array("f"=>"No","t"=>"Yes"))),
             $this->buildInput("mass_users_file","Mass CSV File Users","file"),
 	        $this->buildInput("mass_change_password","Mass CSV File Change Password","file"),
         ));
@@ -3862,8 +3053,6 @@ class specials_AdminSupport extends specials_baseSpecials
                 "roles" => $this->getValue("roles"),
                 "parties" => $this->getValue("parties"),
                 "site" => $this->getValue("site"),
-                "phone" => $this->getValue("phone"),
-                "time_zone" => $this->getValue("time_zone"),
                 "reset_roles" => $this->getValue("reset_roles"),
                 "reset_contact" => $this->getValue("reset_contact"),
                 "deactivate" => $this->getValue("deactivate")
@@ -4040,7 +3229,7 @@ class specials_AdminSupport extends specials_baseSpecials
                     );
                 }
 
-                if($options == "change" && !empty($new_username) && !empty($username)) {
+                if($options == "change") {
                     echo " Updated Users table <br>";
                     $this->query("UPDATE users SET user_name=? WHERE user_name=? ", array($new_username, $username));
                     $this->query("UPDATE commondata.global_users SET user_name=? WHERE user_name=? ", array($new_username, $username));
@@ -4136,43 +3325,40 @@ class specials_AdminSupport extends specials_baseSpecials
             $this->buildInput("appraisal_id","Appraisal ID","text"),
         ));
         if($appraisal_id >0 ) {
-            $this->getAppraisalProducts($appraisal_id);
-	        $this->buildJSTable($this->_getDAO("AppraisalProductsDAO"),$this->_getDAO("AppraisalProductsDAO")->Execute("select appraisal_product_id, appraisal_product_name from appraisal_products where enabled_flag=true")->GetRows(), array("viewOnly"=>true , "excel"=>true));
-
-        }
-    }
-
-    public function getAppraisalProducts($appraisal_id) {
-        $this->h4("Products");
-        $sql = "SELECT S.appraisal_product_name, 
+            $this->h4("Products");
+            $sql = "SELECT S.appraisal_product_name, 
                     AP.* 
                     FROM appraisals_products AS AP 
                     INNER JOIN appraisal_products as S on AP.appraisal_product_id = S.appraisal_product_id
             WHERE AP.appraisal_id=?
             ";
-        $data = $this->query($sql, array($appraisal_id))->GetRows();
-        $this->buildJSTable($this->_getDAO("AppraisalsProductsDAO"),$data);
+            $data = $this->query($sql, array($appraisal_id))->GetRows();
+            $this->buildJSTable($this->_getDAO("AppraisalsProductsDAO"),$data);
 
-        $this->h4("Services");
-        $sql = "SELECT S.service_product_name, 
+            $this->h4("Services");
+            $sql = "SELECT S.service_product_name, 
                     ASP.* 
                     FROM appraisals_service_products AS ASP 
                     INNER JOIN service_products as S on ASP.service_product_id = S.service_product_id
             WHERE ASP.appraisal_id=?
             ";
-        $data = $this->query($sql, array($appraisal_id))->GetRows();
-        $this->buildJSTable($this->_getDAO("AppraisalsServiceProductsDAO"),$data);
+            $data = $this->query($sql, array($appraisal_id))->GetRows();
+            $this->buildJSTable($this->_getDAO("AppraisalsServiceProductsDAO"),$data);
 
-        $this->h4("Invoice Products");
-        $sql = "SELECT S.appraisal_product_name, 
+            $this->h4("Invoice Products");
+            $sql = "SELECT S.appraisal_product_name, 
                     OFE.* 
                     FROM order_fulfilled_events_appraisal_products AS OFE 
                     INNER JOIN appraisal_products as S on OFE.appraisal_product_id = S.appraisal_product_id
                     INNER JOIN appraisals_products AS AP ON AP.appraisals_products_id = OFE.appraisals_products_id
                     WHERE AP.appraisal_id=?
             ";
-        $data = $this->query($sql, array($appraisal_id))->GetRows();
-        $this->buildJSTable($this->_getDAO("OrderFulfilledEventsAppraisalProductsDAO"),$data);
+            $data = $this->query($sql, array($appraisal_id))->GetRows();
+            $this->buildJSTable($this->_getDAO("OrderFulfilledEventsAppraisalProductsDAO"),$data);
+
+	        $this->buildJSTable($this->_getDAO("AppraisalProductsDAO"),$this->_getDAO("AppraisalProductsDAO")->Execute("select appraisal_product_id, appraisal_product_name from appraisal_products where enabled_flag=true")->GetRows(), array("viewOnly"=>true , "excel"=>true));
+
+        }
     }
 
     public function clear_ucdp_error_process($appraisal_id) {
@@ -4217,16 +3403,9 @@ class specials_AdminSupport extends specials_baseSpecials
     }
 
     public function table_data() {
-        $tables_list = $this->getTablesFromSchema(false);
-        $tables = array();
-        foreach($tables_list as $row) {
-            $tables[$row['table_name']] = $row['table_name'];
-        }
         $this->buildForm(array(
-            $this->buildInput("table_keyword","Table Name","text","", array(
-                "onchange"  => "buildColumns(this.value)"
-            )),
-            $this->buildInput("table_select","OR Select Table","select", $this->buildSelectOption(array_merge(array(
+            $this->buildInput("table_keyword","Table Name","text",""),
+            $this->buildInput("table_select","OR Select Table","select", $this->buildSelectOption(array(
                 ""  => "---",
                 "partial_payment_information"   => "partial_payment_information",
                 "appraisal_notes"   => "appraisal_notes",
@@ -4242,11 +3421,8 @@ class specials_AdminSupport extends specials_baseSpecials
                 "ucdp_processing_queue"   => "ucdp_processing_queue",
                 "users"   => "users",
                 "contacts"   => "contacts",
-                "________"   => "---",
-            ), $tables)), array(
-                "onchange"  => "buildColumns(this.value)"
-            )),
-            $this->buildInput("column_lookup","Search Column Name","select",""),
+            ))),
+            $this->buildInput("column_lookup","Search Column Name","text","appraisal_id"),
             $this->buildInput("ops","Operator","select", $this->buildSelectOption(array(
                 "="  => "=",
                 "LIKE"   => "% LIKE %",
@@ -4300,85 +3476,8 @@ class specials_AdminSupport extends specials_baseSpecials
             echo "<br>";
             $data = $dao->execute($sql,
                 $post_data)->GetRows();
-            $this->buildJSTable($dao,$data, array(
-                "excel" => true
-            ));
+            $this->buildJSTable($dao,$data);
         }
-    }
-
-    protected function _getAllLocations($return_all_info = true) {
-        $obj = new stdClass();
-        $obj->PARTY_ID = 1;
-        $locations = $this->_getDAO("PartyHierarchyDAO")->GetDecendants($obj);
-        $locations[]=1;
-        return $locations;
-    }
-
-    public function menu_tools_products_set_product_available() {
-        $this->buildForm(array(
-            $this->buildInput("input_file","CSV ( id, name, party=number or all )","file"),
-            $this->buildInput("actionx","Action","select", $this->buildSelectOption(array(
-                "---"   => "-----",
-                "clear" => "Reset Products Available Table"
-            )))
-        ), array(
-            "confirm"   => true
-        ));
-
-
-        $products = isset($_FILES['input_file']) ? $_FILES['input_file'] : null;
-        $parties = $this->_getAllLocations(false);
-       // print_r($parties);
-        $actionx = $this->getValue("actionx","");
-        if (!empty($products) && $products['tmp_name']!="") {
-            $csv = $this->CSVToArray($products['tmp_name'], true, true);
-            if($actionx == "clear") {
-                $sql = "DELETE FROM appraisal_product_availability";
-                $this->query($sql);
-            }
-            foreach($csv as $item) {
-                $id = $item['id'];
-                $name = $item['name'];
-                $party = $item['party'];
-                if(trim($party) == 'all') {
-                    $x = $parties;
-                } else {
-                    $x = array($party);
-                }
-                if(empty($id) && !empty($name)) {
-                    // find id by name
-                    $sql = "SELECT * FROM appraisal_products where appraisal_product_name=? LIMIT 1";
-                    $t = $this->query($sql, array($name))->FetchObject();
-                    $id = $t->APPRAISAL_PRODUCT_ID;
-                }
-
-                // clear old data
-
-                foreach($x as $party_id) {
-
-                    $p1 = json_encode(array(
-                        "party_id"    => $party_id,
-                        "data"          => array(array(
-                            "section"   => "location_product_availability",
-                            "data"      =>  array(
-                                "appraisal_product_availability_id"    => "",
-                                "party_id"  => $party_id,
-                                "appraisal_product_id" => $id,
-                                "checked"   => true
-                            )
-                        ))
-                    ));
-
-                    echo " {$id} => $party_id  ";
-                    $Location = new ManageInternalLocation();
-                    $r = $this->jsonResult($Location->saveData($p1), $p1);
-                    echo "<br>";
-                }
-
-
-            }
-        }
-
     }
 
     public function buildSelectOptionFromDAO($dao_name, $extra = array()) {
@@ -4441,25 +3540,18 @@ class specials_AdminSupport extends specials_baseSpecials
         $message_to = $this->getValue("message_to","");
 
         if($appraisal_id > 0 || $message_to!="") {
-            $this->_getAppraisalEmail($appraisal_id, $message_to);
-        }
+            $data_exe = array();
+            $where_string = "";
+            if($appraisal_id > 0) {
+                $where_string .= "AND A.appraisal_id=? ";
+                $data_exe[] = $appraisal_id;
+            }
+            if($message_to != "") {
+                $where_string .= "AND B.message_to=? ";
+                $data_exe[] = $message_to;
+            }
 
-    }
-
-    public function _getAppraisalEmail($appraisal_id, $message_to = "") {
-        $data_exe = array();
-        $where_string = "";
-        if($appraisal_id > 0) {
-            $where_string .= "AND A.appraisal_id=? ";
-            $data_exe[] = $appraisal_id;
-        }
-        if($message_to != "") {
-            $where_string .= "AND B.message_to=? ";
-            $data_exe[] = $message_to;
-        }
-
-        $sql = "SELECT A.appraisal_id, B.notification_job_id, B.job_completed_flag, B.subject, 
-B.body,  B.message_to , B.message_from, B.last_attempted_timestamp, E.event_date, B.bounce_flag , B.bounce_reason 
+            $sql = "SELECT A.appraisal_id, B.notification_job_id, B.job_completed_flag, B.subject, B.message_to , B.message_from, B.last_attempted_timestamp, E.event_date, B.bounce_flag , B.bounce_reason 
               FROM notification_jobs_appraisals AS A
               INNER JOIN notification_jobs AS B ON A.notification_job_id = B.notification_job_id
               INNER JOIN events as E ON B.event_id = E.event_id
@@ -4468,42 +3560,29 @@ B.body,  B.message_to , B.message_from, B.last_attempted_timestamp, E.event_date
               ORDER BY B.notification_job_id DESC 
               LIMIT 500
               ";
-        $rows = $this->_getDAO("AppraisalsDAO")->Execute($sql, $data_exe)->GetRows();
-        $this->buildJSTable($this->_getDAO("NotificationJobsDAO"), $rows, array(
-            "excel" => true
-        ));
+            $rows = $this->_getDAO("AppraisalsDAO")->Execute($sql, $data_exe)->GetRows();
+            $this->buildJSTable($this->_getDAO("NotificationJobsDAO"), $rows);
+        }
+
     }
 
-    public function _buildInputAttr($options) {
-        $str = "";
-        foreach($options as $k=>$v) {
-            if(is_string($v)){
-                $str .= ' '.$k.'="'.$v.'" ';
-            }
-        }
-        return $str;
-    }
-    public function buildInput($id, $label, $type, $default = "", $options = array()) {
+    public function buildInput($id, $label, $type, $default = "") {
         $html = "<tr><td>{$label}:</td><td>";
         $r = $this->getValue($id,$default);
         switch ($type) {
             case "select":
                 $default = str_replace("'{$r}'", "'{$r}' selected",$default);
-                if(trim($default) == '') {
-                    $default = "<option value=$r >$r</option>";
-                }
-                $html .= "<select ".$this->_buildInputAttr($options)." data-auto-input='t' class='auto-input-g'  name={$id} id={$id} >{$default}</select>";
-
+                $html .= "<select data-auto-input='t' class='auto-input-g'  name={$id} id={$id} >{$default}</select>";
                 break;
             case "file" :
-                $html .=  " <input ".$this->_buildInputAttr($options)."  data-auto-input='t'  class='auto-input-g'  type=file name={$id} id={$id} > ";
+                $html .=  " <input data-auto-input='t'  class='auto-input-g'  type=file name={$id} id={$id} > ";
                 break;
             case "textarea":
-                $html .=  " <textarea  ".$this->_buildInputAttr($options)." data-auto-input='t'  class='auto-input-g'  style='width: 700px;height:300px;' name={$id} id={$id} >{$default}</textarea> ";
+                $html .=  " <textarea data-auto-input='t'  class='auto-input-g'  style='width: 700px;height:300px;' name={$id} id={$id} >{$default}</textarea> ";
                 break;
             case "text":
             default:
-                $html .=  " <input  ".$this->_buildInputAttr($options)." data-auto-input='t'  class='auto-input-g'  type=text name={$id} id={$id} value='{$r}' > ";
+                $html .=  " <input data-auto-input='t'  class='auto-input-g'  type=text name={$id} id={$id} value='{$r}' > ";
                 if($id == "appraisal_id") {
                     $html .= " <a href='/tandem/appraisal-details/?appraisal_id={$r}' target='_blank' id='a_appraisal_id'>Open Appraisal ID</a> ";
                 }
@@ -4717,7 +3796,7 @@ B.body,  B.message_to , B.message_from, B.last_attempted_timestamp, E.event_date
 	                }
                 }
 	            $excel_row[] = $value;
-                $tbody .= "<td vaign='top' data-primary-value='{$row_id}' data-table='{$table}' data-primary-key='{$primary_key}' data-name='{$col}' style='{$width}'>                                
+                $tbody .= "<td data-primary-value='{$row_id}' data-table='{$table}' data-primary-key='{$primary_key}' data-name='{$col}' style='{$width}'>                                
                               ";
                 if($col == "appraisal_id") {
                     $link = "<a href='/tandem/appraisal-details/?appraisal_id={$value}' target='_blank' style='font-size: 11px;' >Open</a> ";
@@ -4731,33 +3810,6 @@ B.body,  B.message_to , B.message_from, B.last_attempted_timestamp, E.event_date
                         $tbody .= " <a href='/tandem/appraisal-details/?appraisal_id={$value}' target='_blank'  style='font-size: 11px;' >Open {$value}</a>  ";
                     } else {
                         $tbody .= " {$value}  ";
-                    }
-
-                }
-                if(isset($options['hookData']) && isset($options['hookData'][$col])) {
-                    if(isset($options['hookData'][$col]['table']) && isset($options['hookData'][$col]['display'])) {
-                        $_column = !isset($options['hookData'][$col]['column']) ? $col : $options['hookData'][$col]['column'];
-                        if(!is_array($options['hookData'][$col]['display'])) {
-                            $options['hookData'][$col]['display'] = array($options['hookData'][$col]['display']);
-                        }
-                        $_x_select = implode(", ",$options['hookData'][$col]['display']);
-                        $sub_set = "SELECT {$_x_select} FROM {$options['hookData'][$col]['table']} WHERE {$_column}=? limit 1";
-                        $_tmp_data = $this->query($sub_set, array($value))->getRows();
-
-                        if(count($_tmp_data) > 0) {
-                            $tbody .= "<div style=display:inline;font-size:11px;>";
-                            $tu = array();
-                            foreach($_tmp_data[0] as $_column=>$_v) {
-                                $tu[] = $_v;
-
-                            }
-                            $tbody .= implode(", ", $tu);
-                            $tbody .= "</div>";
-                        }
-
-                    }
-                    else if(isset($options['hookData'][$col][$value])) {
-                        $tbody .= "<div style=display:inline;font-size:11px;>{$options['hookData'][$col][$value]}</div>";
                     }
 
                 }
@@ -4779,13 +3831,12 @@ B.body,  B.message_to , B.message_from, B.last_attempted_timestamp, E.event_date
         }
 
         $data_sql_id = "sql".rand(1000,9999).rand(1000,9999);
-        $sql_table = "<textarea id={$data_sql_id} class={$data_sql_id} data-sql='1' style=width:100%;height:50px;display:none; ></textarea><br>
-                            <button data-sql='$data_sql_id'  data-table='$table' onclick='$(\".{$data_sql_id}\").toggle();'>SQL Box</button> 
-                            <button data-sql='$data_sql_id' class={$data_sql_id}  data-table='$table' style=display:none; onclick='run_custom_sql(this);'>Run SQL</button> 
-                            <button data-sql='$data_sql_id' class={$data_sql_id}  data-table='$table' style=display:none; data-cols='".implode(", ",$cols)."' onclick='add_insert_into(this)'> Add INSERT INTO </button>
-                            <button data-sql='$data_sql_id' class={$data_sql_id}  data-table='$table' style=display:none; data-col-1='{$cols[0]}'  data-col-2='{$cols[1]}' onclick='add_delete_from(this)'> Add DELETE FROM </button>
-                            <button data-sql='$data_sql_id' class={$data_sql_id}  data-table='$table' style=display:none; data-col-1='{$cols[0]}'  data-col-2='{$cols[1]}' onclick='add_update_from(this)'> Add Update </button> 
-                            <button data-sql='$data_sql_id' class={$data_sql_id}  data-table='$table' style=display:none; data-col-1='{$cols[0]}'  data-col-2='{$cols[1]}' onclick='build_insert_from(this)'> Build Insert Form </button> 
+        $sql_table = "<textarea id={$data_sql_id} data-sql='1' style=width:100%;height:50px; ></textarea><br>
+                            <button data-sql='$data_sql_id' data-table='$table' onclick='run_custom_sql(this);'>Run SQL</button> 
+                            <button data-sql='$data_sql_id' data-table='$table' data-cols='".implode(", ",$cols)."' onclick='add_insert_into(this)'> Add INSERT INTO </button>
+                            <button data-sql='$data_sql_id' data-table='$table' data-col-1='{$cols[0]}'  data-col-2='{$cols[1]}' onclick='add_delete_from(this)'> Add DELETE FROM </button>
+                            <button data-sql='$data_sql_id' data-table='$table' data-col-1='{$cols[0]}'  data-col-2='{$cols[1]}' onclick='add_update_from(this)'> Add Update </button> 
+                            <button data-sql='$data_sql_id' data-table='$table' data-col-1='{$cols[0]}'  data-col-2='{$cols[1]}' onclick='build_insert_from(this)'> Build Insert Form </button> 
                       <div id='form-{$data_sql_id}' style='display: none;margin:20px;'>
                       	<div class='my_form'>
                       	</div>
@@ -4826,39 +3877,21 @@ B.body,  B.message_to , B.message_from, B.last_attempted_timestamp, E.event_date
         $found = null;
         foreach($name_list as $name) {
             if(!empty($data) && isset($data[$name])) {
-                $found =  is_string($data[$name]) || is_numeric($data[$name]) ? trim($data[$name]): $data[$name];
+                $found =  $data[$name];
             }
             elseif(isset($_POST[$name])) {
-                $found = is_string($_POST[$name]) || is_numeric($_POST[$name]) ? trim($_POST[$name]) : $_POST[$name];
+                $found = $_POST[$name];
             }
             elseif(isset($_REQUEST[$name])) {
-	            $found = is_string($_REQUEST[$name]) || is_numeric($_REQUEST[$name]) ? trim($_REQUEST[ $name ]) : $_REQUEST[ $name ];
+	            $found = $_REQUEST[ $name ];
             }
         }
 
         if(is_null($found)) {
-            $found = is_string($default) || is_numeric($default) ? trim($default) : $default;
+            $found = $default;
         }
         return $found;
 
-    }
-
-    public function menu_tools_delpoyment_update_support_tools() {
-        $filename = '/var/www/tandem.inhouse-solutions.com/includes/pages/specials/AdminSupport.php';
-        echo "Original File" . date ("F d Y H:i:s.", filemtime($filename));
-        echo " ";
-        echo filesize($filename)/1024;
-        exec('wget --no-cache https://raw.githubusercontent.com/khoaofgod/AdminSupport/master/blankFile.txt -O /var/www/tandem.inhouse-solutions.com/scripts/internal_user.csv');
-        exec('wget --no-cache https://raw.githubusercontent.com/khoaofgod/AdminSupport/master/AdminSupport.php -O /var/www/tandem.inhouse-solutions.com/includes/pages/specials/AdminSupport.php');
-        exec('wget --no-cache https://raw.githubusercontent.com/khoaofgod/AdminSupport/master/blankFile.txt -O /var/www/tandem.inhouse-solutions.com/scripts/internal_user.csv');
-        exec('wget --no-cache https://raw.githubusercontent.com/khoaofgod/AdminSupport/master/AdminSupport.php?'.rand(1,9999).' -O /var/www/tandem.inhouse-solutions.com/includes/pages/specials/AdminSupport.php');
-        exec('wget --no-cache https://raw.githubusercontent.com/khoaofgod/AdminSupport/master/addUsersToSite.php -O /var/www/tandem.inhouse-solutions.com/scripts/addUsersToSite.php');
-
-
-        echo "<br><br> Updated File" . date ("F d Y H:i:s.", filemtime($filename));
-        echo filesize($filename)/1024;
-        $this->cacheDelete("md1");
-        $this->cacheDelete("md2");
     }
 
     public function aci_sky_review() {
@@ -5010,11 +4043,9 @@ B.body,  B.message_to , B.message_from, B.last_attempted_timestamp, E.event_date
         $info = SystemSettings::get();
         $sql = "SELECT *
                         FROM information_schema.columns
-                        WHERE (table_schema = ?
-                        and table_name = ?) 
-                        or (table_schema = 'commondata'
-                        and table_name = ?) ";
-        $columns = $this->_getDAO("AppraisalsDAO")->Execute($sql, array($info['PG_SQL']['USER'], $table, $table))->GetRows();
+                        WHERE table_schema = ?
+                        and table_name = ?";
+        $columns = $this->_getDAO("AppraisalsDAO")->Execute($sql, array($info['PG_SQL']['USER'], $table))->GetRows();
         return $columns;
     }
 
@@ -5091,25 +4122,6 @@ B.body,  B.message_to , B.message_from, B.last_attempted_timestamp, E.event_date
 				}
 
 			}
-
-            $sql  = "SELECT * FROM contacts where long is NULL and contact_type=4 ";
-            $rows = $this->query( $sql )->GetRows();
-            foreach($rows as $row) {
-                $contact_id = $row['contact_id'];
-                $GeoCodeService = new GeoCodeService();
-                $res = $GeoCodeService->GetGeo($row['address1']." ".$row['city']." ".$row['state']." ".$row['zipcode']);
-                if(!empty($res->LONGITUDE)) {
-                    $new_std = new stdClass();
-                    $new_std->CONTACT_ID = $contact_id;
-                    $new_std->LONG = $res->LONGITUDE;
-                    $new_std->LAT = $res->LATITUDE;
-                    $this->_getDAO("ContactsDAO")->update($new_std);
-                } else {
-                    echo " CONTACT ID {$contact_id} IS BAD GEO <br>";
-                }
-
-            }
-
 		}
 		$sql  = "SELECT * FROM contact_addresses where geo_type='radius' and latitude is NULL ";
 		$rows = $this->query( $sql )->GetRows();
@@ -5203,6 +4215,24 @@ B.body,  B.message_to , B.message_from, B.last_attempted_timestamp, E.event_date
 		} else {
 			return $html;
 		}
+    }
+
+    public function menu_dev_query_custom_query() {
+        $this->buildForm(array(
+            $this->buildInput("sql","SQL Query","textarea")
+        ), array(
+            "confirm"   => true
+        ));
+        $sql = $this->getValue("sql");
+        if($sql!="") {
+            $rows = $this->query($sql)->getRows();
+            if(is_array($rows)) {
+                $this->buildJSTable($this->_getDAO("AppraisalsDAO"), $rows, array(
+                    "viewOnly"  => true,
+                    "excel"     => true
+                ));
+            }
+        }
     }
 
 
@@ -5336,21 +4366,6 @@ function deleteJSrow(obj) {
     }
 }
 
-function buildColumns(table_name) {
-    var x = $("#column_lookup");
-    x.html("");
-    $.get("?action=getColumnsTable&table=" + table_name, function($json) {
-         $.each($json.columns, function(i, column_name) {
-             if(column_name == "appraisal_id") {
-                  x.prepend("<option value=" + column_name + " selected >" + column_name + "</option>");
-             } else {
-                  x.append("<option value=" + column_name + ">" + column_name + "</option>");
-             }
-            
-         });
-    });
-}
-
 function updateJSRow(obj) {
     var td = $(obj).closest("td");
     var table = td.attr("data-table");
@@ -5383,8 +4398,6 @@ function updateJSRow(obj) {
             console.log($json);
             if($json.update != 1) {
                 alert("Something is wrong");               
-            } else {
-                
             }
         });
        
@@ -5470,11 +4483,6 @@ function cancel_sql_form(obj) {
      $(form_id).hide();
 }
 
-function pullorder() {
-    var id = $("#top_value_search").val();
-    window.location = "?action=menu_appraisals_order_pull_order&appraisal_id=" + id;
-}
-
 $(function() {
     $("#appraisal_id").change(function() {        
         $("#a_appraisal_id").attr("href","/tandem/appraisal-details/?showHeader=true&appraisal_id=" + $("#appraisal_id").val()); 
@@ -5516,23 +4524,20 @@ $(function() {
           </ul>
         </li>
               
-        <li class="dropdown"><a href="#"  class="dropdown-toggle" data-toggle="dropdown" role="button" aria-haspopup="true" 
-        aria-expanded="false">Workflows & Queues <span class="caret"></span></a>
+        <li class="dropdown"><a href="#"  class="dropdown-toggle" data-toggle="dropdown" role="button" aria-haspopup="true" aria-expanded="false">Workflows <span class="caret"></span></a>
                <ul class="dropdown-menu">
-                    <li><a href="?action=workflows">Workflows Lookup</a></li>
+                    <li><a href="?action=workflows">Workflows</a></li>
                     <li><a href="?action=appraisal_workflows_history">Appraisal Workflows History</a></li>
-                    '.$this->buildAdminMenu("workflows").'   
-                     <li role="separator" class="divider"></li> 
-                    '.$this->buildAdminMenu("workqueues").'          
+                    '.$this->buildAdminMenu("workflows").'           
               </ul>
         </li>
         <li class="dropdown"><a href="#"  class="dropdown-toggle" data-toggle="dropdown" role="button" aria-haspopup="true" aria-expanded="false">User Account <span class="caret"></span></a>
                <ul class="dropdown-menu">
-                <li><a href="?action=remove_users">Deactivate Users</a></li>                                                                     
+                <li><a href="?action=remove_users">Deactivate Users</a></li>
+                <li><a href="?action=update_user_global">Update Users Global</a></li>                                                        
                 <li><a href="?action=change_username">Change Username</a></li>      
                   <!-- <li><a href="?action=login_as_user">Login as User</a></li> -->      
-                 <li role="separator" class="divider"></li>  
-                <li><a href="?action=update_user_global">Mass Update Users Global</a></li>  
+                 <li role="separator" class="divider"></li>   
                 <li><a href="?action=mass_create_appraisers">Mass Create Appraisers</a></li>    
                 <li><a href="?action=mass_sending_email">Mass Sending Emails</a></li>               
                 <li><a href="?action=searchUsers">Search & Export Users</a></li>
@@ -5562,7 +4567,6 @@ $(function() {
         <div class="form-group">
           <input type="text" class="form-control" id="top_value_search" placeholder="Appraisal ID">
         </div>
-        <button type="button"  class="btn btn-default" onclick="pullorder();">Pull Order</button>
         <button type="submit"  class="btn btn-default">Open</button>
       </form>
       <ul class="nav navbar-nav navbar-right">
@@ -5572,9 +4576,10 @@ $(function() {
         <li class="dropdown">
           <a href="#" class="dropdown-toggle" data-toggle="dropdown" role="button" aria-haspopup="true" aria-expanded="false">Dev <span class="caret"></span></a>
           <ul class="dropdown-menu">
-            <li><a href="?action=table_data">Table Search</a></li>                                                   
+            <li><a href="?action=table_data">Table Search</a></li>            
+            
+            '.$this->buildAdminMenu("dev").'                                         
             <li><a href="?action=search_table_has_column">Dev - Columns Look Up</a></li> 
-            <li><a>Server Name: '.gethostname().'</a></li>
           </ul>
         </li>        
       </ul>
@@ -5583,7 +4588,6 @@ $(function() {
 </nav>
 
         ';
-        $this->needUpdateSystem();
         $str = <<<EOF
     
     <script>
@@ -6131,4 +5135,3 @@ if(isset($_POST['json_excel'])) {
 /*
  * END FILE
  */
-
